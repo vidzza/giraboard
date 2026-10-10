@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Check installer script
+        run: bash -n deploy/install.sh && shellcheck -S error deploy/install.sh
+
+      - name: Smoke test (production server)
+        run: |
+          DATA_DIR="$RUNNER_TEMP/data" PORT=3000 NODE_ENV=production \
+            node --disable-warning=ExperimentalWarning server/index.ts > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:3000/api/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:3000/api/auth/status | grep -q '"needs_setup":true'
+          curl -fsS http://127.0.0.1:3000/ | grep -q '<div id="root">'
+          grep -q 'Código de configuración' "$RUNNER_TEMP/server.log"
+          cat "$RUNNER_TEMP/server.log"
+
+      - name: Demo data
+        run: DATA_DIR="$RUNNER_TEMP/demo" npm run seed

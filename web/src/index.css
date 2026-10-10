@@ -1,0 +1,148 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-display: 'Fraunces Variable', Georgia, serif;
+  --font-sans: 'Figtree Variable', ui-sans-serif, system-ui, sans-serif;
+
+  --color-paper: #f5f0e8;
+  --color-paper-2: #ece5d8;
+  --color-paper-3: #e3dbcc;
+  --color-card: #fffdf9;
+  --color-ink: #1d2b2a;
+  --color-ink-2: #46524f;
+  --color-ink-3: #5e6865;
+  --color-line: #e0d7c8;
+  --color-line-2: #d2c7b5;
+
+  --color-pine: #1e5b4f;
+  --color-pine-dark: #15443a;
+  --color-pine-soft: #dcebe4;
+
+  --color-clay: #a23e27;
+  --color-clay-soft: #f7e0d8;
+  --color-amber: #8c5a05;
+  --color-amber-soft: #f6e8c8;
+  --color-sky: #2f6496;
+  --color-sky-soft: #dde8f3;
+  --color-moss: #256c4b;
+  --color-moss-soft: #dcefe3;
+  --color-slate: #5b6670;
+  --color-slate-soft: #e6e8e8;
+
+  --shadow-card: 0 1px 0 rgba(29, 43, 42, 0.04), 0 1px 3px rgba(29, 43, 42, 0.08);
+  --shadow-lift: 0 2px 4px rgba(29, 43, 42, 0.06), 0 12px 28px -6px rgba(29, 43, 42, 0.22);
+  --shadow-panel: -12px 0 40px -12px rgba(29, 43, 42, 0.25);
+
+  --animate-rise: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-fade: fade 0.2s ease-out both;
+  --animate-slide-in: slide-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-pop: pop 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-in {
+    from { transform: translateX(32px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes pop {
+    from { transform: scale(0.97) translateY(6px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    font-size: 16px;
+  }
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    font-feature-settings: 'ss01';
+    /* Textura de papel muy sutil */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.3 0 0 0 0 0.2 0 0 0 .045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  ::selection {
+    background: var(--color-pine-soft);
+  }
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  :focus-visible {
+    outline: 2.5px solid var(--color-pine);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  input[type='date']::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.6;
+  }
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 min-h-10 text-[15px] font-semibold transition-all duration-150 select-none disabled:opacity-50 active:scale-[0.98];
+}
+@utility btn-primary {
+  @apply btn bg-pine text-white shadow-[0_1px_0_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,0.12)] hover:bg-pine-dark;
+}
+@utility btn-secondary {
+  @apply btn bg-card text-ink border border-line-2 hover:bg-paper-2 hover:border-ink-3/40;
+}
+@utility btn-ghost {
+  @apply btn text-ink-2 hover:bg-paper-2 hover:text-ink;
+}
+@utility btn-danger {
+  @apply btn text-clay hover:bg-clay-soft;
+}
+@utility btn-sm {
+  @apply min-h-8 px-3 text-sm rounded-lg;
+}
+@utility input {
+  @apply w-full rounded-xl border border-line-2 bg-card px-3.5 min-h-11 text-[15px] text-ink placeholder:text-ink-3 transition-colors hover:border-ink-3/50 focus:border-pine focus:outline-none focus:ring-3 focus:ring-pine/15;
+}
+@utility label {
+  @apply mb-1.5 block text-[13px] font-bold uppercase tracking-[0.06em] text-ink-3;
+}
+@utility chip {
+  @apply inline-flex items-center gap-1.5 rounded-full border px-3 min-h-9 text-sm font-semibold transition-all duration-150 active:scale-[0.97];
+}
+@utility chip-off {
+  @apply chip border-line-2 bg-card text-ink-2 hover:border-ink-3/50 hover:text-ink;
+}
+@utility chip-on {
+  @apply chip border-pine bg-pine text-white;
+}
+@utility panel {
+  @apply rounded-2xl border border-line bg-card shadow-card;
+}
+@utility eyebrow {
+  @apply text-[12px] font-bold uppercase tracking-[0.12em] text-ink-3;
+}
+
+textarea.input {
+  @apply py-2.5 leading-relaxed;
+}
+
+/* Barras de desplazamiento discretas */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-2) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
