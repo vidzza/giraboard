@@ -63,6 +63,8 @@ Big project-management tools are built for software teams and feel overwhelming 
   <img src="docs/screenshots/mobile-my-day.jpg" alt="Mobile: My Day" width="260" />
   &nbsp;&nbsp;
   <img src="docs/screenshots/mobile-ticket.jpg" alt="Mobile: task detail" width="260" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-board-dark.jpg" alt="Mobile: board in dark mode" width="260" />
 </p>
 
 ## Make it yours

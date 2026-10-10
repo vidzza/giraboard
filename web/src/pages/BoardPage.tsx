@@ -466,8 +466,13 @@ function PersonHeader({ user, tickets }: { user: User | null; tickets: Ticket[] 
           {user && !user.active && <span className="ml-1.5 text-[12px] font-sans font-bold text-ink-3">(sin acceso)</span>}
         </h2>
         <p className="text-[12px] font-semibold text-ink-3">
-          {tickets.length} abiertos
-          {overdue > 0 && <span className="text-clay"> · {overdue} vencidos</span>}
+          {tickets.length} abierto{tickets.length === 1 ? '' : 's'}
+          {overdue > 0 && (
+            <span className="text-clay">
+              {' '}
+              · {overdue} vencido{overdue === 1 ? '' : 's'}
+            </span>
+          )}
           {waiting > 0 && <span className="text-amber"> · {waiting} en espera</span>}
         </p>
       </div>

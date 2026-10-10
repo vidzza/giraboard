@@ -62,6 +62,8 @@ Las herramientas grandes de gestión de proyectos están hechas para equipos de 
   <img src="docs/screenshots/mobile-my-day.jpg" alt="Celular: Mi día" width="260" />
   &nbsp;&nbsp;
   <img src="docs/screenshots/mobile-ticket.jpg" alt="Celular: detalle" width="260" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-board-dark.jpg" alt="Celular: tablero en modo oscuro" width="260" />
 </p>
 
 ## Hazlo tuyo
