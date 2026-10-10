@@ -43,13 +43,15 @@ export function SearchDialog({ open, onClose, onOpenTicket }: { open: boolean; o
   };
 
   return (
-    <Modal open={open} onClose={onClose} width="max-w-2xl">
-      <div className="sticky top-0 -mx-6 border-b border-line bg-card px-6 pt-5 pb-3">
+    <Modal open={open} onClose={onClose} width="max-w-2xl" label="Buscar">
+      <div className="sticky top-0 z-10 -mx-5 border-b border-line bg-card px-5 pt-3 pb-3 sm:-mx-6 sm:px-6 sm:pt-5">
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-ink-3" />
           <input
             autoFocus
             className="input min-h-13 pl-11 text-[17px]"
+            aria-label="Buscar pendientes o clientes"
+            enterKeyHint="search"
             placeholder="Buscar por título, cliente o número (#12)…"
             value={q}
             onChange={(e) => {

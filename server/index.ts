@@ -6,6 +6,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { compress } from 'hono/compress';
 import { bodyLimit } from 'hono/body-limit';
 import { streamSSE } from 'hono/streaming';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { db, ROOT_DIR, DATA_DIR } from './db.ts';
@@ -38,6 +39,12 @@ if (isProd && !fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
   console.error('Falta compilar la interfaz. Ejecuta primero: npm run build');
   process.exit(1);
 }
+
+// Identifica la versión compilada de la interfaz. Si cambia (se actualizó el servidor),
+// los navegadores abiertos muestran «Hay una versión nueva» para recargar.
+const BUILD_ID = isProd
+  ? crypto.createHash('sha256').update(fs.readFileSync(path.join(DIST_DIR, 'index.html'))).digest('hex').slice(0, 12)
+  : 'dev';
 
 const app = new Hono<AppEnv>();
 
@@ -80,7 +87,7 @@ app.onError((err, c) => {
 });
 
 const api = new Hono<AppEnv>();
-api.get('/health', (c) => c.json({ ok: true }));
+api.get('/health', (c) => c.json({ ok: true, build: BUILD_ID }));
 api.route('/auth', authRoutes);
 
 api.use('*', requireAuth);
@@ -104,7 +111,7 @@ api.get('/events', (c) => {
   c.header('X-Accel-Buffering', 'no');
   return streamSSE(c, async (stream) => {
     addStream(stream, user.id);
-    await stream.writeSSE({ event: 'ready', data: '{}' });
+    await stream.writeSSE({ event: 'ready', data: JSON.stringify({ build: BUILD_ID }) });
     let open = true;
     stream.onAbort(() => {
       open = false;

@@ -35,16 +35,17 @@ Las herramientas grandes de gestión de proyectos están hechas para equipos de 
 
 | | |
 |---|---|
-| 🗓️ **Mi día** | Vencidos, para hoy, seguimientos, próximos 7 días, quietos y sin fecha: tuyos, de alguien del equipo o de todos. |
-| 🗂️ **Tablero** | 4 estados claros (*Por hacer · En proceso · Esperando · Listo*), arrastrar y soltar, vista por persona y filtros. |
-| 📋 **Detalle** | Responsable, fecha, cliente, tipo, prioridad, repetición, notas, **pasos con barra de avance**, archivos y bitácora. |
+| 🗓️ **Mi día** | Vencidos, para hoy, seguimientos, pasos que te encargaron, próximos 7 días, lo que encargaste a otros y lo que tienes en copia. |
+| 📥 **Por asignar** | Lo que nadie ha tomado va a una bandeja que ven admin y coordinación, con un botón para repartirlo. Nada se queda sin dueño. |
+| 🗂️ **Tablero** | 4 estados claros (*Por hacer · En proceso · Esperando · Listo*), arrastrar y soltar o botón «Mover», vista por persona y filtros. En el celular, una columna a la vez. |
+| 📋 **Detalle** | **Varios responsables**, personas **en copia**, fecha, cliente, tipo, prioridad, repetición, notas, **pasos con persona y barra de avance**, archivos y bitácora. |
 | 👥 **Clientes** | Cada pendiente ligado a un cliente, con historial y botones de **WhatsApp** y llamada. |
 | 📅 **Calendario** | Fechas límite y seguimientos por mes. |
 | 📊 **Resumen** | Carga por persona, lo que lleva más tiempo esperando, lo estancado, ritmo semanal y actividad del equipo. |
 | 🔔 **Tiempo real y recordatorios** | Cambios en vivo, avisos en la app y en el navegador, menciones con @ y recordatorios diarios. |
-| 🔐 **Cuentas** | Roles de admin y equipo, contraseñas temporales que cada quien cambia al entrar y quitar acceso pasando pendientes a otra persona. Si alguien se queda fuera, se recupera desde la terminal. |
+| 🔐 **Roles y permisos** | **Admin**, **Coordinación** (ve todo y reparte) y **Equipo** (ve solo lo suyo), revisados en el servidor. Solo un admin borra. Contraseñas temporales y recuperación desde la terminal. |
 | 💾 **Tus datos** | Un solo archivo SQLite, respaldos diarios automáticos, descarga de respaldo y exportación a Excel. |
-| 📱 **En cualquier pantalla** | Funciona en celular, se puede agregar a la pantalla de inicio y tiene atajos de teclado (`N` nuevo, `/` buscar). |
+| 📱 **En cualquier pantalla** | Pensado para celular (botones grandes, menús que suben desde abajo, campos que no hacen zoom) y computadora (atajos `N` nuevo, `/` buscar). Modo **claro, oscuro o automático** con colores accesibles (WCAG AA). |
 
 <table>
   <tr>
@@ -84,7 +85,9 @@ npm install
 npm run probar
 ```
 
-Abre http://localhost:5173 y entra con un usuario de prueba: `ana` (admin), `luis` o `carla`, contraseña `demo1234`. Los datos de la demo son ficticios.
+Abre http://localhost:5173 y entra con un usuario de prueba: `ana` (admin), `marta` (coordinación), `luis` o `carla` (equipo), contraseña `demo1234`. Los datos de la demo son ficticios.
+
+Para correr las pruebas automáticas de permisos: `npm test`.
 
 Para ver una instalación nueva (pantalla de configuración inicial):
 
@@ -102,7 +105,7 @@ Giraboard es **un solo proceso de Node.js con base de datos SQLite integrada**: 
 sudo ./deploy/install.sh pendientes.tu-dominio.com
 ```
 
-También tiene modo para **Raspberry Pi con Cloudflare Tunnel** (`--tunel`, sin abrir puertos) y para **solo la red de la oficina** (`--red-local`). Volver a correrlo actualiza la app y antes hace un respaldo.
+También tiene modo para **Raspberry Pi con Cloudflare Tunnel** (`--tunel`, sin abrir puertos) y para **solo la red de la oficina** (`--red-local`). Arranca solo al prender el equipo, puedes tener **varios tableros** en la misma Raspberry (`--nombre ventas --puerto 3001`) y `--actualizar` los actualiza todos con respaldo previo.
 
 Todo el detalle está en la **[guía de instalación](docs/DESPLIEGUE.md)**: DNS, primera vez, cuentas, respaldos y qué hacer si algo falla.
 

@@ -2,7 +2,7 @@
 
 *[Read in English](DEPLOYMENT.md)*
 
-Giraboard corre como un **servicio del sistema** (systemd): arranca solo al prender el equipo y se reinicia si algo falla. La base de datos es un archivo (SQLite), así que no hay que instalar nada más. Para el HTTPS del dominio se usa **Caddy**, que saca y renueva el certificado solo.
+Giraboard corre como un **servicio del sistema** (systemd): **arranca solo al prender el equipo** (aunque nadie inicie sesión) y se reinicia en 3 segundos si algo falla. No hace falta dejar una terminal abierta. La base de datos es un archivo (SQLite), así que no hay que instalar nada más. Para el HTTPS del dominio se usa **Caddy**, que saca y renueva el certificado solo.
 
 En los ejemplos se usa `pendientes.tu-dominio.com`. Cámbialo por el subdominio real de tu negocio.
 
@@ -63,7 +63,28 @@ Funciona aunque el internet de la oficina no tenga IP fija. Requiere que el DNS 
 cd ~/giraboard && sudo ./deploy/install.sh --red-local
 ```
 
-Se abre en `http://IP-de-la-raspberry:3000` desde las computadoras conectadas a la misma red.
+Se abre desde cualquier computadora o celular conectado al mismo wifi en `http://IP-de-la-raspberry:3000` o en `http://raspberrypi.local:3000` (el instalador muestra las dos al terminar).
+
+Si estabas probando con `npm run probar` en una terminal, ciérralo antes con **Ctrl+C**: ya no hace falta, el servicio corre solo. Si quieres conservar lo que capturaste en esas pruebas, agrega `--importar-datos ~/giraboard/data` la primera vez (solo se puede importar en un tablero vacío).
+
+## Varios tableros en el mismo equipo
+
+Una sola Raspberry puede tener varios tableros **independientes**, cada uno con sus propias cuentas, pendientes y respaldos, en su propio puerto. Sirve, por ejemplo, para dos negocios o dos sucursales.
+
+```bash
+cd ~/giraboard && sudo ./deploy/install.sh --red-local --nombre ventas --puerto 3001
+```
+
+- `--nombre`: minúsculas, números y guiones (ej. `ventas`, `sucursal-norte`). El primero que instalas se llama **principal**.
+- `--puerto`: opcional. Si no lo pones, toma el siguiente libre (3001, 3002…). El instalador avisa si el puerto ya lo usa otro tablero u otro programa.
+- También funciona con dominio o túnel: `sudo ./deploy/install.sh ventas.tu-dominio.com --nombre ventas`.
+- Todos comparten el mismo código: al actualizar se actualizan y reinician todos.
+
+| Para | Comando |
+|---|---|
+| Ver los tableros, su puerto y si están corriendo | `sudo ./deploy/install.sh --lista` o `sudo giraboard tableros` |
+| Usar los comandos de abajo en otro tablero | agrega `-t NOMBRE`, ej. `sudo giraboard -t ventas usuarios` |
+| Quitar un tablero (sus datos se conservan) | `sudo ./deploy/install.sh --quitar ventas` |
 
 ## Paso 3 · Primera vez
 
@@ -75,8 +96,22 @@ El código evita que alguien de internet cree la cuenta de admin antes que tú. 
 
 ## Cuentas: qué hay y cómo se manejan
 
-- **Admin**: agrega personas, les da contraseña nueva si la olvidan, quita accesos, cambia los tipos de pendiente y la zona horaria, elimina pendientes y descarga los datos. Puede haber varios, pero siempre debe quedar al menos uno.
-- **Equipo**: ve y trabaja todos los pendientes, y solo cambia su propio perfil y contraseña.
+Hay tres roles. El servidor revisa los permisos en cada acción (no basta con ocultar botones).
+
+| | Admin | Coordinación | Equipo |
+|---|:-:|:-:|:-:|
+| Ver sus pendientes, los que pidió y donde está en copia | ✅ | ✅ | ✅ |
+| Ver los pendientes de todo el equipo y la bandeja «Por asignar» | ✅ | ✅ | — |
+| Asignar pendientes a otras personas | ✅ | ✅ | si el admin lo permite |
+| Ver el Resumen y la actividad del equipo | ✅ | ✅ | — |
+| Archivar pendientes | ✅ | ✅ | los que creó |
+| Borrar pendientes | ✅ | — | — |
+| Agregar personas, cambiar roles y ajustes, descargar respaldos | ✅ | — | — |
+
+- Un pendiente puede tener **varios responsables** (a todos les aparece y cualquiera lo termina) y personas **en copia** (lo ven y reciben avisos).
+- Lo que se crea **sin responsable** va a la bandeja **«Por asignar»**, que solo ven admin y coordinación (y quien lo creó), y se les avisa.
+- Cualquiera puede borrar su propia nota o archivo durante 15 minutos; después, solo un admin.
+- Puede haber varios admins, pero siempre debe quedar al menos uno.
 - **Contraseña olvidada**: un admin, en Equipo → Editar → «Darle una contraseña nueva». Se cierran sus sesiones y al entrar crea una propia.
 - **Si alguien deja de trabajar ahí**: Editar → quitar «Tiene acceso». El sistema pregunta a quién pasarle sus pendientes abiertos y su historial se conserva.
 - **Si el único admin olvida su contraseña**, desde la terminal del servidor (cambia `ana` por su usuario):
@@ -90,6 +125,7 @@ El código evita que alguien de internet cree la cuenta de admin antes que tú. 
 
 | Comando | Qué hace |
 |---|---|
+| `sudo giraboard tableros` | Lista los tableros instalados, su puerto y si están corriendo |
 | `sudo giraboard usuarios` | Lista a las personas, si tienen acceso y su último ingreso |
 | `sudo giraboard restablecer <usuario>` | Contraseña temporal para alguien |
 | `sudo giraboard crear-admin <usuario> "Nombre"` | Crea otro admin |
@@ -99,17 +135,21 @@ El código evita que alguien de internet cree la cuenta de admin antes que tú. 
 | `giraboard logs` | Ver lo que está pasando (Ctrl+C para salir) |
 | `giraboard estado` / `sudo giraboard reiniciar` | Estado del servicio / reiniciarlo |
 
+Con varios tableros, agrega `-t NOMBRE` justo después de `giraboard` (ej. `giraboard -t ventas logs`).
+
 ## Actualizar a una versión nueva
 
-Baja el código nuevo (`cd ~/giraboard && git pull`) y vuelve a correr el mismo comando de instalación. Antes de actualizar hace un respaldo automático y no toca los datos.
+Un solo comando actualiza todos los tableros del equipo. Antes respalda cada base de datos y no toca datos ni ajustes:
 
 ```bash
-cd ~/giraboard && sudo ./deploy/install.sh pendientes.tu-dominio.com
+cd ~/giraboard && git pull && sudo ./deploy/install.sh --actualizar
 ```
+
+(Volver a correr el comando con el que instalaste también actualiza.) Si alguien tenía la app abierta, le aparece «Hay una versión nueva» con un botón para recargar.
 
 ## Respaldos
 
-- **Automático**: un respaldo diario de la base de datos en `/var/lib/giraboard/data/backups/` (se guardan 30 días).
+- **Automático**: un respaldo diario de la base de datos en `/var/lib/giraboard/data/backups/` (se guardan 30 días). Los demás tableros, en `/var/lib/giraboard/tableros/NOMBRE/backups/`.
 - **Desde la app**: Equipo y ajustes → «Descargar respaldo completo» y «Descargar pendientes para Excel».
 - **Fuera del servidor**, recomendado cada semana. Así se copia todo, incluidos los archivos adjuntos, a tu computadora:
   ```bash
@@ -124,9 +164,9 @@ Para **restaurar** un respaldo: `sudo systemctl stop giraboard`, copia el archiv
 | Qué | Dónde |
 |---|---|
 | Código | `/opt/giraboard` |
-| Datos (base, archivos, respaldos) | `/var/lib/giraboard/data` |
-| Configuración | `/etc/giraboard/giraboard.env` (después de editarla: `sudo giraboard reiniciar`) |
-| Servicio | `/etc/systemd/system/giraboard.service` |
+| Datos (base, archivos, respaldos) | `/var/lib/giraboard/data` (otros tableros: `/var/lib/giraboard/tableros/NOMBRE`) |
+| Configuración | `/etc/giraboard/giraboard.env` (otros: `/etc/giraboard/NOMBRE.env`). Después de editarla: `sudo giraboard reiniciar` |
+| Servicio | `giraboard.service` (otros: `giraboard-NOMBRE.service`) en `/etc/systemd/system/` |
 | HTTPS | `/etc/caddy/Caddyfile` |
 
 ## Si algo no funciona

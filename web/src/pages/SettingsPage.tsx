@@ -9,16 +9,33 @@ import {
   FileSpreadsheet,
   KeyRound,
   LogOut,
+  Monitor,
+  Moon,
   Pencil,
   Plus,
   RefreshCw,
   ShieldCheck,
+  Sun,
+  UserCog,
   UserPlus,
+  Users,
 } from 'lucide-react';
-import { CATEGORY_COLORS, USER_COLORS, type Category, type Role, type User } from '../../../shared/types.ts';
+import {
+  CATEGORY_COLORS,
+  LEGACY_COLOR_FIX,
+  ROLES,
+  ROLE_HINT,
+  ROLE_LABEL,
+  USER_COLORS,
+  type Category,
+  type Role,
+  type User,
+} from '../../../shared/types.ts';
 import { api } from '../lib/api.ts';
+import { copyText } from '../lib/clipboard.ts';
 import { qk, useCategories, useCurrentUser, useInvalidate, useSettings, useTickets, useUsers } from '../lib/queries.ts';
 import { timeAgo } from '../lib/dates.ts';
+import { getThemePref, setThemePref, type ThemePref } from '../lib/theme.ts';
 import { Avatar } from '../components/Avatar.tsx';
 import { Modal } from '../components/Modal.tsx';
 import { EditableText } from '../components/Editable.tsx';
@@ -42,9 +59,10 @@ export function SettingsPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <header>
         <p className="eyebrow">{isAdmin ? 'Personas, tipos de pendiente y tu perfil' : 'Tu perfil'}</p>
-        <h1 className="font-display text-[32px] leading-tight font-semibold tracking-tight">{isAdmin ? 'Equipo y ajustes' : 'Mi perfil'}</h1>
+        <h1 className="page-title">{isAdmin ? 'Equipo y ajustes' : 'Mi perfil'}</h1>
       </header>
       <Profile />
+      <Appearance />
       {isAdmin && <Team />}
       {isAdmin && <Categories />}
       {isAdmin && <Business />}
@@ -69,21 +87,63 @@ function Panel({ title, subtitle, children, aside }: { title: string; subtitle?:
 }
 
 function ColorSwatches({ colors, value, onChange }: { colors: string[]; value: string; onChange: (c: string) => void }) {
+  const current = (LEGACY_COLOR_FIX[value.toUpperCase()] ?? value).toUpperCase();
   return (
     <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Color">
-      {colors.map((c) => (
+      {colors.map((c, i) => (
         <button
           key={c}
           type="button"
           role="radio"
-          aria-checked={value === c}
+          aria-checked={current === c.toUpperCase()}
           onClick={() => onChange(c)}
-          className={`size-9 rounded-full transition-transform hover:scale-110 ${value === c ? 'ring-3 ring-ink ring-offset-2' : ''}`}
+          className={`size-10 rounded-full transition-transform hover:scale-110 ${current === c.toUpperCase() ? 'ring-3 ring-ink ring-offset-2 ring-offset-card' : ''}`}
           style={{ backgroundColor: c }}
-          aria-label={`Color ${c}`}
+          aria-label={`Color ${i + 1}`}
         />
       ))}
     </div>
+  );
+}
+
+const THEMES: { value: ThemePref; label: string; hint: string; icon: ReactNode }[] = [
+  { value: 'auto', label: 'Automático', hint: 'Como esté el celular o la computadora', icon: <Monitor className="size-5" /> },
+  { value: 'light', label: 'Claro', hint: 'Fondo color papel', icon: <Sun className="size-5" /> },
+  { value: 'dark', label: 'Oscuro', hint: 'Más cómodo de noche', icon: <Moon className="size-5" /> },
+];
+
+/** Tema de colores. Se guarda en este dispositivo (cada quien elige en su celular y en su computadora). */
+function Appearance() {
+  const [theme, setTheme] = useState<ThemePref>(getThemePref);
+  return (
+    <Panel title="Apariencia" subtitle="Se guarda en este dispositivo.">
+      <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Tema de colores">
+        {THEMES.map((t) => {
+          const on = theme === t.value;
+          return (
+            <button
+              key={t.value}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => {
+                setTheme(t.value);
+                setThemePref(t.value);
+              }}
+              className={`flex min-h-14 items-center gap-3 rounded-xl border-[1.5px] px-3.5 py-2.5 text-left transition-colors ${
+                on ? 'border-pine bg-pine-soft' : 'border-line-2 bg-card hover:bg-paper-2'
+              }`}
+            >
+              <span className={on ? 'text-pine' : 'text-ink-3'}>{t.icon}</span>
+              <span>
+                <span className={`block font-bold ${on ? 'text-pine' : ''}`}>{t.label}</span>
+                <span className="block text-[13px] text-ink-3">{t.hint}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Panel>
   );
 }
 
@@ -191,7 +251,8 @@ function Team() {
         </button>
       }
     >
-      <ul className="divide-y divide-line rounded-2xl border border-line">
+      <RolesExplainer />
+      <ul className="mt-4 divide-y divide-line rounded-2xl border border-line">
         {users.map((u) => (
           <li key={u.id} className={`flex flex-wrap items-center gap-3 px-4 py-3 ${u.active ? '' : 'bg-paper/60'}`}>
             <Avatar user={u} size="md" className={u.active ? '' : 'opacity-50'} />
@@ -199,11 +260,7 @@ function Team() {
               <p className="flex flex-wrap items-center gap-2 font-bold">
                 {u.name}
                 {u.id === me.id && <span className="text-[13px] font-semibold text-ink-3">(tú)</span>}
-                {u.role === 'admin' && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-pine-soft px-2 py-0.5 text-[12px] font-bold text-pine">
-                    <ShieldCheck className="size-3.5" /> Admin
-                  </span>
-                )}
+                <RoleBadge role={u.role} />
                 {!u.active && <span className="rounded-full bg-paper-3 px-2 py-0.5 text-[12px] font-bold text-ink-2">Sin acceso</span>}
                 {u.active && u.must_change_password ? (
                   <span className="rounded-full bg-amber-soft px-2 py-0.5 text-[12px] font-bold text-amber">Contraseña temporal</span>
@@ -214,7 +271,7 @@ function Team() {
                 {u.last_login_at ? `último acceso ${timeAgo(u.last_login_at)}` : 'todavía no ha entrado'}
               </p>
             </div>
-            <button className="btn-ghost btn-sm" onClick={() => setEditing(u)}>
+            <button className="btn-secondary btn-sm" onClick={() => setEditing(u)} aria-label={`Editar a ${u.name}`}>
               <Pencil className="size-4" /> Editar
             </button>
           </li>
@@ -222,6 +279,74 @@ function Team() {
       </ul>
       <UserModal user={editing} onClose={() => setEditing(null)} />
     </Panel>
+  );
+}
+
+const ROLE_ICON: Record<Role, ReactNode> = {
+  admin: <ShieldCheck className="size-3.5" />,
+  manager: <UserCog className="size-3.5" />,
+  member: <Users className="size-3.5" />,
+};
+
+function RoleBadge({ role }: { role: Role }) {
+  const tone = role === 'admin' ? 'bg-pine-soft text-pine' : role === 'manager' ? 'bg-plum-soft text-plum' : 'bg-paper-2 text-ink-2';
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-bold ${tone}`}>
+      {ROLE_ICON[role]} {ROLE_LABEL[role]}
+    </span>
+  );
+}
+
+/** Qué puede hacer cada rol, en una tabla corta. */
+function RolesExplainer() {
+  return (
+    <details className="group rounded-2xl border border-line bg-paper/50">
+      <summary className="flex min-h-12 items-center gap-2 px-4 font-semibold text-ink-2 marker:content-none">
+        <ShieldCheck className="size-4 text-ink-3" /> ¿Qué puede hacer cada quién?
+        <span className="ml-auto text-[13px] text-pine group-open:hidden">Ver</span>
+      </summary>
+      <div className="overflow-x-auto px-4 pb-4">
+        <table className="w-full min-w-[520px] text-[14px]">
+          <thead>
+            <tr className="text-left text-[12px] tracking-wider text-ink-3 uppercase">
+              <th className="py-2 font-bold"> </th>
+              {ROLES.map((r) => (
+                <th key={r} className="py-2 text-center font-bold">
+                  {ROLE_LABEL[r]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {(
+              [
+                ['Ver sus pendientes, los que pidió y donde está en copia', [1, 1, 1]],
+                ['Ver los pendientes de todo el equipo', [1, 1, 0]],
+                ['Bandeja «Por asignar» y repartir el trabajo', [1, 1, 0]],
+                ['Asignar pendientes a otras personas', [1, 1, 2]],
+                ['Ver el Resumen y la actividad del equipo', [1, 1, 0]],
+                ['Archivar pendientes', [1, 1, 3]],
+                ['Borrar pendientes', [1, 0, 0]],
+                ['Agregar personas, permisos y ajustes', [1, 0, 0]],
+                ['Descargar respaldos y Excel', [1, 0, 0]],
+              ] as const
+            ).map(([label, cells]) => (
+              <tr key={label}>
+                <td className="py-2 pr-3 text-ink-2">{label}</td>
+                {cells.map((c, i) => (
+                  <td key={i} className="py-2 text-center">
+                    {c === 1 ? '✅' : c === 0 ? <span className="text-ink-3">—</span> : c === 2 ? <span className="text-[12px] font-semibold text-ink-2">si lo permites</span> : <span className="text-[12px] font-semibold text-ink-2">los que creó</span>}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="mt-2 text-[13px] text-ink-3">
+          Cualquiera puede borrar su propia nota o archivo durante 15 minutos (para corregir un error). Después, solo un admin.
+        </p>
+      </div>
+    </details>
   );
 }
 
@@ -262,10 +387,12 @@ function UserModal({ user, onClose }: { user: User | 'new' | null; onClose: () =
   }
 
   const target = user && user !== 'new' ? user : null;
-  const openTickets = useMemo(
-    () => (target ? tickets.filter((t) => t.assignee_id === target.id && t.status !== 'done').length : 0),
-    [tickets, target],
-  );
+  // Sus pendientes abiertos: los que solo tiene esa persona necesitan a alguien más; los compartidos se quedan con los demás.
+  const { openTickets, soloTickets } = useMemo(() => {
+    if (!target) return { openTickets: 0, soloTickets: 0 };
+    const open = tickets.filter((t) => t.assignee_ids.includes(target.id) && t.status !== 'done' && !t.archived_at);
+    return { openTickets: open.length, soloTickets: open.filter((t) => t.assignee_ids.length === 1).length };
+  }, [tickets, target]);
   const deactivating = !!target && !!target.active && !form.active;
 
   const submit = async () => {
@@ -302,12 +429,8 @@ function UserModal({ user, onClose }: { user: User | 'new' | null; onClose: () =
   const copyAccess = async () => {
     if (!created) return;
     const text = `Hola ${created.name.split(' ')[0]}, ya tienes acceso a Giraboard.\nEntra a ${window.location.origin}\nUsuario: ${created.username}\nContraseña temporal: ${created.password}\nAl entrar te pedirá crear tu propia contraseña.`;
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success('Copiado. Pégalo en WhatsApp para mandárselo.');
-    } catch {
-      toast(text);
-    }
+    if (await copyText(text)) toast.success('Copiado. Pégalo en WhatsApp para mandárselo.');
+    else toast(text, { description: 'Copia este mensaje', duration: 20_000 });
   };
 
   // Pantalla final: datos de acceso para entregar a la persona.
@@ -351,7 +474,7 @@ function UserModal({ user, onClose }: { user: User | 'new' | null; onClose: () =
           <button className="btn-ghost" onClick={onClose}>
             Cancelar
           </button>
-          <button className={deactivating ? 'btn bg-clay text-white hover:bg-clay/90' : 'btn-primary'} onClick={submit} disabled={saving}>
+          <button className={deactivating ? 'btn-danger-solid' : 'btn-primary'} onClick={submit} disabled={saving}>
             {isNew ? 'Crear acceso' : deactivating ? 'Quitar acceso' : 'Guardar'}
           </button>
         </>
@@ -412,19 +535,34 @@ function UserModal({ user, onClose }: { user: User | 'new' | null; onClose: () =
         )}
 
         <div>
-          <span className="label">Permisos</span>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className={form.role === 'member' ? 'chip-on' : 'chip-off'} onClick={() => setForm({ ...form, role: 'member' })}>
-              Equipo
-            </button>
-            <button type="button" className={form.role === 'admin' ? 'chip-on' : 'chip-off'} onClick={() => setForm({ ...form, role: 'admin' })}>
-              <ShieldCheck className="size-4" /> Admin
-            </button>
+          <span className="label">Rol</span>
+          <div className="grid gap-2" role="radiogroup" aria-label="Rol">
+            {(['member', 'manager', 'admin'] as Role[]).map((r) => {
+              const on = form.role === r;
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setForm({ ...form, role: r })}
+                  className={`flex items-start gap-3 rounded-xl border-[1.5px] px-3.5 py-2.5 text-left transition-colors ${
+                    on ? 'border-pine bg-pine-soft' : 'border-line-2 bg-card hover:bg-paper-2'
+                  }`}
+                >
+                  <span className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${on ? 'border-pine' : 'border-field'}`}>
+                    {on && <span className="size-2.5 rounded-full bg-pine-solid" />}
+                  </span>
+                  <span>
+                    <span className={`flex items-center gap-1.5 font-bold ${on ? 'text-pine' : ''}`}>
+                      {ROLE_ICON[r]} {ROLE_LABEL[r]}
+                    </span>
+                    <span className="block text-[13px] text-ink-2">{ROLE_HINT[r]}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
-          <p className="mt-1.5 text-[13px] text-ink-3">
-            Todos ven y trabajan todos los pendientes. Un admin además maneja las cuentas, los tipos de pendiente, puede eliminar y descargar
-            respaldos.
-          </p>
         </div>
         <div>
           <span className="label">Color</span>
@@ -434,7 +572,7 @@ function UserModal({ user, onClose }: { user: User | 'new' | null; onClose: () =
         {target && target.id !== me.id && (
           <div className={`rounded-2xl border p-4 ${form.active ? 'border-line' : 'border-clay/30 bg-clay-soft/40'}`}>
             <label className="flex items-start gap-3">
-              <input type="checkbox" className="mt-1 size-5 accent-pine" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+              <input type="checkbox" className="mt-1 size-5 accent-[var(--color-pine-solid)]" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
               <span>
                 <b>Tiene acceso</b>
                 <span className="block text-[13px] text-ink-3">Si ya no trabaja aquí, quítale el acceso. Su historial se conserva.</span>
@@ -443,8 +581,17 @@ function UserModal({ user, onClose }: { user: User | 'new' | null; onClose: () =
             {deactivating && openTickets > 0 && (
               <div className="mt-3 border-t border-clay/20 pt-3">
                 <label className="label" htmlFor="u-reassign">
-                  Tiene {openTickets} pendiente{openTickets === 1 ? '' : 's'} abierto{openTickets === 1 ? '' : 's'}. ¿Quién se queda con ellos?
+                  {soloTickets > 0
+                    ? `Tiene ${soloTickets} pendiente${soloTickets === 1 ? '' : 's'} que solo lleva esa persona. ¿Quién se queda con ellos?`
+                    : 'Sus pendientes son compartidos'}
                 </label>
+                {openTickets > soloTickets && (
+                  <p className="mb-2 text-[13px] text-ink-2">
+                    {openTickets - soloTickets} pendiente{openTickets - soloTickets === 1 ? '' : 's'} compartido{openTickets - soloTickets === 1 ? '' : 's'} se
+                    queda{openTickets - soloTickets === 1 ? '' : 'n'} con las demás personas.
+                  </p>
+                )}
+{soloTickets > 0 && (
                 <select
                   id="u-reassign"
                   className="input"
@@ -458,8 +605,9 @@ function UserModal({ user, onClose }: { user: User | 'new' | null; onClose: () =
                         {u.name}
                       </option>
                     ))}
-                  <option value="">Dejarlos sin asignar</option>
+                  <option value="">Dejarlos en la bandeja «Por asignar»</option>
                 </select>
+)}
               </div>
             )}
           </div>
@@ -549,7 +697,7 @@ function Business() {
     return data?.timezone && !list.includes(data.timezone) ? [data.timezone, ...list] : list;
   }, [data?.timezone]);
 
-  const save = async (patch: { business_name?: string; timezone?: string }) => {
+  const save = async (patch: { business_name?: string; timezone?: string; members_can_assign?: boolean }) => {
     try {
       await api.patch('/settings', patch);
       invalidate();
@@ -586,6 +734,20 @@ function Business() {
           <p className="mt-1.5 text-[13px] text-ink-3">Define qué es «hoy», qué está vencido y a qué hora salen los recordatorios.</p>
         </div>
       </div>
+      <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border border-line p-4">
+        <input
+          type="checkbox"
+          className="mt-1 size-5 shrink-0 accent-[var(--color-pine-solid)]"
+          checked={data?.members_can_assign ?? true}
+          onChange={(e) => save({ members_can_assign: e.target.checked })}
+        />
+        <span>
+          <b>El equipo puede asignar pendientes a otras personas</b>
+          <span className="block text-[14px] text-ink-2">
+            Si lo apagas, quienes tienen rol «Equipo» solo pueden tomar pendientes para sí o dejarlos «Por asignar», y coordinación los reparte.
+          </span>
+        </span>
+      </label>
     </Panel>
   );
 }

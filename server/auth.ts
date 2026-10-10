@@ -118,6 +118,13 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
+/** Admin o Coordinación (quienes ven todo el trabajo del equipo). */
+export const requireLead: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const role = c.get('user')?.role;
+  if (role !== 'admin' && role !== 'manager') return c.json({ error: 'Solo admin o coordinación pueden ver esto.' }, 403);
+  await next();
+};
+
 export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (c.get('user')?.role !== 'admin') {
     return c.json({ error: 'Solo un admin puede hacer esto.' }, 403);

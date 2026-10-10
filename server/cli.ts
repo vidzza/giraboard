@@ -10,7 +10,7 @@ import { hashPassword, temporaryPassword } from './auth.ts';
 import { backupDatabase } from './backup.ts';
 import { ensureSetupCode, hasUsers } from './routes/auth.ts';
 import { seedDefaults } from './defaults.ts';
-import type { User } from '../shared/types.ts';
+import { ROLE_LABEL, type User } from '../shared/types.ts';
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -45,7 +45,7 @@ switch (command) {
     if (!users.length) console.log('Todavía no hay usuarios.');
     for (const u of users) {
       const parts = [
-        u.role === 'admin' ? 'admin' : 'equipo',
+        ROLE_LABEL[u.role] ?? u.role,
         u.active ? 'con acceso' : 'SIN ACCESO',
         u.last_login_at ? `último acceso ${new Date(u.last_login_at).toLocaleString('es-MX')}` : 'nunca ha entrado',
         u.must_change_password ? 'contraseña temporal' : '',

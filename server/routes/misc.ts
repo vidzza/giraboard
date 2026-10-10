@@ -4,10 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { all, db, get, run, getSetting, setSetting, todayStr, nowIso, getTimezone, isValidTimezone, setTimezone } from '../db.ts';
-import { type AppEnv, requireAdmin } from '../auth.ts';
+import { type AppEnv, requireAdmin, requireLead } from '../auth.ts';
 import { fail, idParam, readJson } from '../http.ts';
 import { broadcastChange } from '../events.ts';
-import { TICKET_SELECT } from './tickets.ts';
+import { selectTickets } from './tickets.ts';
+import { visibleClause } from '../permissions.ts';
 import {
   STALE_DAYS,
   PRIORITY_LABEL,
@@ -58,7 +59,11 @@ categoryRoutes.patch('/:id', requireAdmin, async (c) => {
 
 export const settingsRoutes = new Hono<AppEnv>();
 
-const currentSettings = () => ({ business_name: getSetting('business_name', 'Giraboard'), timezone: getTimezone() });
+const currentSettings = () => ({
+  business_name: getSetting('business_name', 'Giraboard'),
+  timezone: getTimezone(),
+  members_can_assign: getSetting('members_can_assign', '1') === '1',
+});
 
 settingsRoutes.get('/', (c) => c.json(currentSettings()));
 
@@ -68,10 +73,12 @@ settingsRoutes.patch('/', requireAdmin, async (c) => {
     z.object({
       business_name: z.string().trim().min(1, 'Escribe el nombre del negocio').max(80).optional(),
       timezone: z.string().max(64).refine(isValidTimezone, 'Zona horaria inválida').optional(),
+      members_can_assign: z.boolean().optional(),
     }),
   );
   if (body.business_name !== undefined) setSetting('business_name', body.business_name);
   if (body.timezone !== undefined) setTimezone(body.timezone);
+  if (body.members_can_assign !== undefined) setSetting('members_can_assign', body.members_can_assign ? '1' : '0');
   broadcastChange('settings');
   return c.json(currentSettings());
 });
@@ -110,9 +117,10 @@ notificationRoutes.post('/read', async (c) => {
   return c.json({ ok: true });
 });
 
-// ---------- Actividad del equipo ----------
+// ---------- Actividad del equipo (Admin y Coordinación) ----------
 
 export const activityRoutes = new Hono<AppEnv>();
+activityRoutes.use('*', requireLead);
 
 activityRoutes.get('/', (c) => {
   const limit = Math.min(200, Number(c.req.query('limit') ?? 50) || 50);
@@ -136,15 +144,11 @@ searchRoutes.get('/', (c) => {
   if (!q) return c.json({ tickets: [], clients: [] });
   const like = `%${q}%`;
   const num = q.replace(/^#/, '');
-  const tickets = all<Ticket>(
-    `${TICKET_SELECT} WHERE CAST(t.id AS TEXT) = ? OR t.title LIKE ? OR t.description LIKE ? OR cl.name LIKE ? OR t.waiting_on LIKE ?
-     ORDER BY CAST(t.id AS TEXT) = ? DESC, (t.status = 'done' OR t.archived_at IS NOT NULL), t.last_activity_at DESC LIMIT 25`,
-    num,
-    like,
-    like,
-    like,
-    like,
-    num,
+  const vis = visibleClause(c.get('user'));
+  const tickets = selectTickets(
+    `(CAST(t.id AS TEXT) = ? OR t.title LIKE ? OR t.description LIKE ? OR cl.name LIKE ? OR t.waiting_on LIKE ?) AND ${vis.sql}`,
+    [num, like, like, like, like, ...vis.params, num],
+    `ORDER BY CAST(t.id AS TEXT) = ? DESC, (t.status = 'done' OR t.archived_at IS NOT NULL), t.last_activity_at DESC LIMIT 25`,
   );
   const clients = all<Client>('SELECT * FROM clients WHERE name LIKE ? OR phone LIKE ? ORDER BY name LIMIT 8', like, like);
   return c.json({ tickets, clients });
@@ -153,6 +157,7 @@ searchRoutes.get('/', (c) => {
 // ---------- Resumen / estadísticas ----------
 
 export const statsRoutes = new Hono<AppEnv>();
+statsRoutes.use('*', requireLead);
 
 function localDate(iso: string) {
   return todayStr(new Date(iso));
@@ -177,9 +182,10 @@ statsRoutes.get('/', (c) => {
   const firstWeek = shiftDays(weekStart, -7 * 7);
   const staleCutoff = new Date(Date.now() - STALE_DAYS * 86_400_000).toISOString();
 
-  const open = all<Ticket>(`${TICKET_SELECT} WHERE t.status != 'done' AND t.archived_at IS NULL`);
-  const recent = all<{ assignee_id: number | null; created_at: string; completed_at: string | null; status: string }>(
-    `SELECT assignee_id, created_at, completed_at, status FROM tickets
+  const open = selectTickets(`t.status != 'done' AND t.archived_at IS NULL`, []);
+  const recent = all<{ assignee_csv: string | null; created_at: string; completed_at: string | null; status: string }>(
+    `SELECT (SELECT group_concat(user_id) FROM ticket_people p WHERE p.ticket_id = t.id AND p.role = 'assignee') AS assignee_csv,
+       created_at, completed_at, status FROM tickets t
      WHERE created_at >= ? OR completed_at >= ?`,
     `${shiftDays(firstWeek, -1)}T00:00:00Z`,
     `${shiftDays(firstWeek, -1)}T00:00:00Z`,
@@ -197,7 +203,9 @@ statsRoutes.get('/', (c) => {
   let dueToday = 0;
   let waiting = 0;
   let followUps = 0;
+  let unassigned = 0;
   for (const t of open) {
+    if (t.assignee_ids.length === 0) unassigned++;
     const isOverdue = !!t.due_date && t.due_date < today;
     if (isOverdue) overdue++;
     if (t.due_date === today) dueToday++;
@@ -206,8 +214,8 @@ statsRoutes.get('/', (c) => {
       if (t.follow_up_date && t.follow_up_date <= today) followUps++;
     }
     perCategory.set(t.category_id, (perCategory.get(t.category_id) ?? 0) + 1);
-    if (t.assignee_id) {
-      const row = userRow(t.assignee_id);
+    for (const uid of t.assignee_ids) {
+      const row = userRow(uid);
       row.open++;
       if (isOverdue) row.overdue++;
       if (t.status === 'waiting') row.waiting++;
@@ -230,7 +238,9 @@ statsRoutes.get('/', (c) => {
       if (weeks.has(dw)) weeks.get(dw)!.done++;
       if (dw === weekStart) {
         doneWeek++;
-        if (r.assignee_id) userRow(r.assignee_id).done_week++;
+        for (const uid of r.assignee_csv ? r.assignee_csv.split(',').map(Number) : []) {
+          if (perUser.has(uid)) userRow(uid).done_week++;
+        }
       }
     }
   }
@@ -252,6 +262,7 @@ statsRoutes.get('/', (c) => {
     done_week: doneWeek,
     created_week: createdWeek,
     stale: staleTickets.length,
+    unassigned,
     per_user: [...perUser.values()],
     per_category: [...perCategory.entries()].map(([category_id, n]) => ({ category_id, open: n })),
     weekly: [...weeks.values()],
@@ -280,23 +291,23 @@ function localDateTime(iso: string | null) {
 
 // Todos los pendientes en un archivo que abre Excel.
 adminRoutes.get('/export.csv', (c) => {
-  const rows = all<Ticket & { assignee_name: string | null; creator_name: string | null; category_name: string | null }>(
-    `SELECT t.*, cl.name AS client_name, cl.phone AS client_phone, a.name AS assignee_name, cr.name AS creator_name, cat.name AS category_name,
-       0 AS checklist_total, 0 AS checklist_done, 0 AS comment_count, 0 AS attachment_count
+  const rows = all<Ticket & { assignee_names: string | null; follower_names: string | null; creator_name: string | null; category_name: string | null }>(
+    `SELECT t.*, cl.name AS client_name, cl.phone AS client_phone, cr.name AS creator_name, cat.name AS category_name,
+       (SELECT group_concat(u.name, ', ') FROM ticket_people p JOIN users u ON u.id = p.user_id WHERE p.ticket_id = t.id AND p.role = 'assignee') AS assignee_names,
+       (SELECT group_concat(u.name, ', ') FROM ticket_people p JOIN users u ON u.id = p.user_id WHERE p.ticket_id = t.id AND p.role = 'follower') AS follower_names
      FROM tickets t
      LEFT JOIN clients cl ON cl.id = t.client_id
-     LEFT JOIN users a ON a.id = t.assignee_id
      LEFT JOIN users cr ON cr.id = t.creator_id
      LEFT JOIN categories cat ON cat.id = t.category_id
      ORDER BY t.id`,
   );
   const header = [
-    'Número', 'Pendiente', 'Estado', 'Prioridad', 'Responsable', 'Tipo', 'Cliente', 'Teléfono', 'Fecha límite',
+    'Número', 'Pendiente', 'Estado', 'Prioridad', 'Responsables', 'En copia', 'Tipo', 'Cliente', 'Teléfono', 'Fecha límite',
     'Esperando a', 'Revisar el', 'Se repite', 'Creado por', 'Creado', 'Terminado', 'Archivado', 'Notas',
   ];
   const lines = rows.map((t) =>
     [
-      t.id, t.title, t.archived_at ? 'Archivado' : STATUS_LABEL[t.status], PRIORITY_LABEL[t.priority], t.assignee_name,
+      t.id, t.title, t.archived_at ? 'Archivado' : STATUS_LABEL[t.status], PRIORITY_LABEL[t.priority], t.assignee_names ?? 'Por asignar', t.follower_names,
       t.category_name, t.client_name, t.client_phone, t.due_date, t.waiting_on, t.follow_up_date, RECURRENCE_LABEL[t.recurrence],
       t.creator_name, localDateTime(t.created_at), localDateTime(t.completed_at), localDateTime(t.archived_at), t.description,
     ]

@@ -10,6 +10,19 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
 
   componentDidCatch(error: Error) {
     console.error(error);
+    // Si el servidor se actualizó, las partes nuevas de la app tienen otro nombre: recargar lo arregla.
+    // (Solo una vez cada 30 s, para no entrar en un ciclo.)
+    if (/dynamically imported module|Importing a module script failed|error loading dynamically/i.test(error.message)) {
+      try {
+        const last = Number(sessionStorage.getItem('gb.reloaded') ?? 0);
+        if (Date.now() - last > 30_000) {
+          sessionStorage.setItem('gb.reloaded', String(Date.now()));
+          window.location.reload();
+        }
+      } catch {
+        /* sin almacenamiento: se muestra el botón */
+      }
+    }
   }
 
   render() {

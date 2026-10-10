@@ -5,14 +5,16 @@ import { type AppEnv, USER_COLS, destroyUserSessions, hashPassword, requireAdmin
 import { fail, idParam, readJson } from '../http.ts';
 import { broadcastChange, logActivity, notify } from '../events.ts';
 import { passwordSchema, usernameSchema } from './auth.ts';
-import type { User } from '../../shared/types.ts';
+import { ROLES, type User } from '../../shared/types.ts';
 
 export const userRoutes = new Hono<AppEnv>();
 
 const getUser = (id: number | bigint) => get<User>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, id);
 
+// Todos ven la lista del equipo (para asignar y mostrar avatares); los datos de acceso solo los ve un admin.
 userRoutes.get('/', (c) => {
-  return c.json(all<User>(`SELECT ${USER_COLS} FROM users ORDER BY active DESC, name`));
+  const cols = c.get('user').role === 'admin' ? USER_COLS : 'id, name, username, role, color, active, 0 AS must_change_password, NULL AS last_login_at, created_at';
+  return c.json(all<User>(`SELECT ${cols} FROM users ORDER BY active DESC, name`));
 });
 
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Color inválido');
@@ -21,7 +23,7 @@ const createSchema = z.object({
   name: z.string().trim().min(1, 'Escribe el nombre').max(60),
   username: usernameSchema,
   password: passwordSchema,
-  role: z.enum(['admin', 'member']).default('member'),
+  role: z.enum(ROLES).default('member'),
   color,
 });
 
@@ -50,7 +52,7 @@ const updateSchema = z.object({
   name: z.string().trim().min(1, 'Escribe el nombre').max(60).optional(),
   username: usernameSchema.optional(),
   color: color.optional(),
-  role: z.enum(['admin', 'member']).optional(),
+  role: z.enum(ROLES).optional(),
   active: z.boolean().optional(),
   password: passwordSchema.optional(),
   current_password: z.string().max(200).optional(),
@@ -76,7 +78,7 @@ userRoutes.patch('/:id', async (c) => {
     fail(400, 'La contraseña actual no es correcta');
   }
   if (body.active === false && isSelf) fail(400, 'No puedes quitarte tu propio acceso');
-  const losingAdmin = (body.role === 'member' && target.role === 'admin') || (body.active === false && target.role === 'admin');
+  const losingAdmin = (body.role !== undefined && body.role !== 'admin' && target.role === 'admin') || (body.active === false && target.role === 'admin');
   if (losingAdmin) {
     const admins = get<{ n: number }>("SELECT COUNT(*) n FROM users WHERE role = 'admin' AND active = 1")!.n;
     if (admins <= 1) fail(400, 'Debe quedar al menos un admin con acceso');
@@ -112,15 +114,30 @@ userRoutes.patch('/:id', async (c) => {
       run('UPDATE users SET active = ? WHERE id = ?', body.active ? 1 : 0, id);
       if (!body.active) {
         destroyUserSessions(id);
+        // Sus pendientes abiertos: se quita de responsables; si se quedan sin nadie, pasan a quien se eligió
+        // (o a la bandeja «por asignar»). Su historial se conserva.
         if (body.reassign_to !== undefined) {
-          const open = all<{ id: number; title: string }>(
-            "SELECT id, title FROM tickets WHERE assignee_id = ? AND status != 'done' AND archived_at IS NULL",
+          const open = all<{ id: number; others: number }>(
+            `SELECT t.id, (SELECT COUNT(*) FROM ticket_people o WHERE o.ticket_id = t.id AND o.role = 'assignee' AND o.user_id != ?) AS others
+             FROM tickets t JOIN ticket_people p ON p.ticket_id = t.id AND p.user_id = ? AND p.role = 'assignee'
+             WHERE t.status != 'done' AND t.archived_at IS NULL`,
+            id,
             id,
           );
           const now = nowIso();
           for (const t of open) {
-            run('UPDATE tickets SET assignee_id = ?, updated_at = ? WHERE id = ?', body.reassign_to, now, t.id);
-            logActivity(t.id, me.id, 'assignee', { from_id: id, to_id: body.reassign_to });
+            run("DELETE FROM ticket_people WHERE ticket_id = ? AND user_id = ? AND role = 'assignee'", t.id, id);
+            const added = !t.others && body.reassign_to ? [body.reassign_to] : [];
+            if (added.length) {
+              run(
+                `INSERT INTO ticket_people (ticket_id, user_id, role) VALUES (?, ?, 'assignee')
+                 ON CONFLICT(ticket_id, user_id) DO UPDATE SET role = 'assignee'`,
+                t.id,
+                body.reassign_to,
+              );
+            }
+            run('UPDATE tickets SET updated_at = ? WHERE id = ?', now, t.id);
+            logActivity(t.id, me.id, 'assignees', { added, removed: [id] });
           }
           reassigned = open.length;
           if (body.reassign_to && open.length) {

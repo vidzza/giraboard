@@ -12,7 +12,10 @@ export function NotificationsMenu({ onOpenTicket }: { onOpenTicket: (id: number)
   const users = useUserMap();
   const { data } = useNotifications();
   const unread = data?.unread ?? 0;
-  const [permission, setPermission] = useState(() => ('Notification' in window ? Notification.permission : 'denied'));
+  // Los avisos del navegador solo existen en conexiones seguras (https o localhost).
+  const [permission, setPermission] = useState(() =>
+    window.isSecureContext && 'Notification' in window ? Notification.permission : 'denied',
+  );
 
   useEffect(() => {
     document.title = unread > 0 ? `(${unread}) Giraboard` : 'Giraboard';
@@ -34,7 +37,7 @@ export function NotificationsMenu({ onOpenTicket }: { onOpenTicket: (id: number)
         >
           {unread > 0 ? <BellRing className="size-[22px] text-ink" /> : <Bell className="size-[22px]" />}
           {unread > 0 && (
-            <span className="absolute top-1 right-1 flex min-w-5 items-center justify-center rounded-full bg-clay px-1 text-[11px] leading-5 font-bold text-white ring-2 ring-paper">
+            <span className="absolute top-1 right-1 flex min-w-5 items-center justify-center rounded-full bg-clay-solid px-1 text-[11px] leading-5 font-bold text-white ring-2 ring-paper">
               {unread > 99 ? '99+' : unread}
             </span>
           )}
@@ -86,7 +89,7 @@ export function NotificationsMenu({ onOpenTicket }: { onOpenTicket: (id: number)
                   </span>
                   <span className="text-[12px] text-ink-3">{timeAgo(n.created_at)}</span>
                 </span>
-                {!n.read_at && <span className="mt-2 size-2 shrink-0 rounded-full bg-clay" />}
+                {!n.read_at && <span className="mt-2 size-2 shrink-0 rounded-full bg-clay-solid" aria-label="Sin leer" />}
               </button>
             ))}
           </div>

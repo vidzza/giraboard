@@ -54,13 +54,16 @@ export function useOpenTicketParam() {
 
 /**
  * Escucha cambios en tiempo real y avisos personales (Server-Sent Events).
- * Devuelve false si se perdió la conexión con el servidor por más de unos segundos.
+ * `online` es false si se perdió la conexión con el servidor por más de unos segundos;
+ * `updateReady` es true si el servidor se actualizó a una versión nueva mientras la página estaba abierta.
  */
 export function useRealtime(onOpenTicket: (id: number) => void) {
   const qc = useQueryClient();
   const openRef = useRef(onOpenTicket);
   openRef.current = onOpenTicket;
   const [online, setOnline] = useState(true);
+  const [updateReady, setUpdateReady] = useState(false);
+  const buildRef = useRef<string | null>(null);
 
   useEffect(() => {
     let es: EventSource | null = null;
@@ -77,10 +80,17 @@ export function useRealtime(onOpenTicket: (id: number) => void) {
     const connect = () => {
       if (disposed) return;
       es = new EventSource('/api/events');
-      es.addEventListener('ready', () => {
+      es.addEventListener('ready', (e) => {
         clearTimeout(offlineTimer);
         setOnline(true);
         refresh();
+        try {
+          const build = (JSON.parse((e as MessageEvent).data) as { build?: string }).build ?? null;
+          if (build && buildRef.current && build !== buildRef.current) setUpdateReady(true);
+          if (build && !buildRef.current) buildRef.current = build;
+        } catch {
+          /* servidor viejo sin versión */
+        }
       });
       es.addEventListener('changed', refresh);
       es.addEventListener('notification', (e) => {
@@ -90,7 +100,7 @@ export function useRealtime(onOpenTicket: (id: number) => void) {
           duration: 10_000,
           action: data.ticket_id ? { label: 'Ver', onClick: () => openRef.current(data.ticket_id!) } : undefined,
         });
-        if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+        if (document.hidden && window.isSecureContext && 'Notification' in window && Notification.permission === 'granted') {
           const n = new Notification('Giraboard', { body: data.message, icon: '/icon-192.png', tag: `gb-${data.ticket_id}` });
           n.onclick = () => {
             window.focus();
@@ -119,5 +129,63 @@ export function useRealtime(onOpenTicket: (id: number) => void) {
     };
   }, [qc]);
 
-  return online;
+  return { online, updateReady };
+}
+
+/**
+ * En celulares, el teclado tapa lo que está pegado abajo (iOS no reduce la pantalla).
+ * Guarda en --kb cuánto mide el teclado, para que las ventanas tipo «hoja» suban con él.
+ */
+export function useKeyboardInset() {
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty('--kb', `${covered > 80 ? covered : 0}px`);
+    };
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    update();
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
+}
+
+/** Preferencia guardada en este navegador (vista, filtros…). Nunca falla si no hay almacenamiento. */
+export function useStoredState<T>(key: string, fallback: T) {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : (JSON.parse(raw) as T);
+    } catch {
+      return fallback;
+    }
+  });
+  const set = useCallback(
+    (next: T) => {
+      setValue(next);
+      try {
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch {
+        /* sin almacenamiento local */
+      }
+    },
+    [key],
+  );
+  return [value, set] as const;
+}
+
+/** true en pantallas chicas (celular). */
+export function useIsMobile(query = '(max-width: 1023px)') {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setMatches(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
 }

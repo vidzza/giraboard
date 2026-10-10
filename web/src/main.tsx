@@ -34,9 +34,11 @@ createRoot(document.getElementById('root')!).render(
         toastOptions={{
           duration: 6000,
           classNames: {
-            toast: '!rounded-2xl !border-line !bg-card !text-ink !shadow-lift !text-[15px] !font-sans',
-            description: '!text-ink-2',
-            actionButton: '!bg-pine !text-white !font-bold !rounded-lg',
+            toast: 'rounded-2xl! border-line! bg-card! text-ink! shadow-lift! text-[15px]! font-sans!',
+            description: 'text-ink-2!',
+            actionButton: 'bg-pine-solid! text-white! font-bold! rounded-lg! min-h-8!',
+            cancelButton: 'bg-paper-2! text-ink! rounded-lg!',
+            closeButton: 'bg-card! border-line! text-ink-2!',
           },
         }}
       />

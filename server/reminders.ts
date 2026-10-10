@@ -1,4 +1,6 @@
-import { all, run, todayStr, getTimezone } from './db.ts';
+import { run, todayStr, getTimezone } from './db.ts';
+import { selectTickets } from './routes/tickets.ts';
+import { leadIds } from './permissions.ts';
 import { notify, broadcastChange } from './events.ts';
 import { purgeExpiredSessions, pruneLoginAttempts } from './auth.ts';
 import { backupDatabase } from './backup.ts';
@@ -14,43 +16,40 @@ function short(title: string) {
 
 /**
  * Recordatorios diarios: pendientes que vencen hoy, vencidos y seguimientos.
+ * Les llegan a sus responsables; si no tiene responsable, a Admin y Coordinación.
  * Cada aviso se crea una sola vez por día gracias a dedupe_key.
  */
 export function runReminders() {
   const hour = localHour();
   if (hour < 7 || hour >= 21) return;
   const today = todayStr();
-  const tickets = all<Ticket>(
-    `SELECT * FROM tickets WHERE status != 'done' AND archived_at IS NULL AND assignee_id IS NOT NULL
-       AND ((due_date IS NOT NULL AND due_date <= ?) OR (status = 'waiting' AND follow_up_date IS NOT NULL AND follow_up_date <= ?))`,
-    today,
-    today,
+  const tickets = selectTickets(
+    `t.status != 'done' AND t.archived_at IS NULL
+       AND ((t.due_date IS NOT NULL AND t.due_date <= ?) OR (t.status = 'waiting' AND t.follow_up_date IS NOT NULL AND t.follow_up_date <= ?))`,
+    [today, today],
   );
+  const leads = leadIds();
   let created = 0;
-  for (const t of tickets) {
-    if (t.due_date === today) {
-      notify({ userId: t.assignee_id, ticketId: t.id, type: 'due_today', message: `Vence hoy: ${short(t.title)}`, dedupeKey: `due:${t.id}:${today}` });
-      created++;
-    } else if (t.due_date && t.due_date < today) {
+  const remind = (t: Ticket, type: string, message: string) => {
+    const unassigned = t.assignee_ids.length === 0;
+    const to = unassigned ? leads : t.assignee_ids;
+    for (const userId of to) {
       notify({
-        userId: t.assignee_id,
+        userId,
         ticketId: t.id,
-        type: 'overdue',
-        message: `Vencido: ${short(t.title)}`,
-        dedupeKey: `overdue:${t.id}:${today}`,
+        type,
+        message: unassigned ? `${message} (sin responsable)` : message,
+        dedupeKey: `${type}:${t.id}:${userId}:${today}`,
       });
       created++;
     }
+  };
+  for (const t of tickets) {
+    if (t.due_date === today) remind(t, 'due_today', `Vence hoy: ${short(t.title)}`);
+    else if (t.due_date && t.due_date < today) remind(t, 'overdue', `Vencido: ${short(t.title)}`);
     if (t.status === 'waiting' && t.follow_up_date && t.follow_up_date <= today) {
       const who = t.waiting_on ? ` (esperando: ${t.waiting_on})` : '';
-      notify({
-        userId: t.assignee_id,
-        ticketId: t.id,
-        type: 'follow_up',
-        message: `Toca dar seguimiento: ${short(t.title)}${who}`,
-        dedupeKey: `follow:${t.id}:${today}`,
-      });
-      created++;
+      remind(t, 'follow_up', `Toca dar seguimiento: ${short(t.title)}${who}`);
     }
   }
   if (created) broadcastChange('notifications');

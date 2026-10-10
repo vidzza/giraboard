@@ -32,6 +32,36 @@ El objetivo: que **ningún pendiente de una oficina pequeña se olvide** y que s
 7. **Archivo**. Nada se borra; todo lo terminado o archivado se puede buscar.
 8. **Equipo y ajustes**. Personas y permisos, tipos de pendiente, nombre del negocio, zona horaria, descargas de datos, perfil y contraseña.
 
+## Jerarquía, trabajo compartido, color y celular
+
+Segunda ronda de investigación, ya con la app en uso en una oficina.
+
+| Hallazgo | De dónde viene | Qué hicimos con eso |
+|---|---|---|
+| En equipos con jerarquía, quien coordina necesita ver todo y repartir, pero no todos deben ver lo de todos. Las herramientas serias separan **ver todo** de **administrar**. | [Asana: permisos](https://asana.com/resources/asana-tips-permissions), [Bitrix24: permisos de supervisor](https://helpdesk.bitrix24.com/open/18195438/) | Tres roles: **Admin** (todo), **Coordinación** (ve todo, reparte, ve el Resumen; no maneja cuentas ni borra) y **Equipo** (solo lo suyo). El servidor revisa cada acción: la búsqueda, los archivos y los clientes también respetan quién ve qué. |
+| Asana defiende **un solo responsable** para que nadie suponga que lo hace el otro; ClickUp permite **varios**. En oficinas pequeñas hay trabajo genuinamente compartido. | [Asana: por qué un solo responsable](https://asana.com/resources/why-one-assignee), [ClickUp: varios responsables](https://help.clickup.com/hc/en-us/articles/6309029762583-Multiple-Assignees) | **Varios responsables** con la regla explícita «cualquiera lo marca como listo», y para dividir el trabajo, **cada paso con su persona** (le aparece en «Pasos que te tocan»). Así se evita el «creí que lo hacías tú». |
+| Lo que no tiene dueño se pierde. Las mesas de ayuda usan una **bandeja de triage**: lo nuevo sin asignar queda visible para quien reparte y sale de ahí al asignarlo. | [Triage de pendientes](https://www.eesel.ai/en/blog/ticket-triage) | Bandeja **«Por asignar»** para admin y coordinación (en Mi día, Tablero y Resumen), con botón «Asignar» y aviso al crearse. Si alguien se quita y nadie queda a cargo, regresa a la bandeja. |
+| Borrar destruye historia; archivar la conserva. | [Borrar vs. archivar](https://edana.ch/en/2026/07/18/soft-delete-preserve-data-history-without-risk/) | Solo un admin borra. Los demás archivan. Cada quien puede borrar su nota o archivo en los primeros 15 minutos para corregir errores. |
+| Las menciones no deben dar acceso de más, pero sí deben alcanzar a quien se menciona. | [Foro de Asana: menciones y colaboradores](https://forum.asana.com/t/team-members-should-not-be-automatically-added-as-collaborators-after-being-mentioned-in-a-task-comment/538599) | Mencionar a alguien que no lo veía lo pone **en copia** (visible en la bitácora) y puede dejar de seguirlo. |
+| El color nunca debe ser la única señal, y cada color debe tener **un solo significado**. Texto ≥ 4.5:1 y bordes de campos ≥ 3:1. | [WCAG 1.4.1 Uso del color](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html), [WCAG 1.4.11 Contraste de no texto](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html), [SAP Fiori: colores semánticos](https://www.sap.com/design-system/fiori-design-web/v1-96/foundations/best-practices/ui-elements/how-to-use-semantic-colors) | Sistema de color con significado fijo (ver abajo), siempre con ícono y texto. Se midió cada par con la fórmula de WCAG: el ocre de avatares fallaba (3.0:1) y los bordes de campos tenían 1.8:1; se corrigieron. |
+| En celular, el tablero de columnas que se deslizan de lado confunde **deslizar** con **arrastrar**. Y arrastrar no puede ser la única forma de mover algo. | [UXmatters: carruseles](https://uxmatters.com/mt/archives/2019/07/creating-effective-carousels.php), [WCAG 2.5.7 Movimientos de arrastre](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements.html) | En celular y tableta el tablero muestra **una columna a la vez con pestañas** y cada tarjeta tiene **«Mover»**. En computadora se puede arrastrar o usar «Mover». |
+| En iPhone, tocar un campo con letra menor a 16 px hace zoom y no regresa. | [Rick Strahl: zoom de iOS en campos](https://weblog.west-wind.com/posts/2023/Apr/17/Preventing-iOS-Textbox-Auto-Zooming-and-ViewPort-Sizing) | Todos los campos miden al menos 16 px. Los menús y ventanas son **hojas que suben desde abajo**, quedan sobre el teclado y respetan la barra del sistema. |
+| Varias caras encimadas sirven para mostrar varios responsables sin ocupar espacio, con un máximo y «+N». | [Primer: AvatarStack](https://primer.style/components/avatar-stack) | Hasta 3 caras y «+N»; sin nadie, un círculo punteado de «Por asignar». |
+
+### El sistema de color
+
+| Color | Significa | Dónde |
+|---|---|---|
+| Verde pino | La marca y las acciones principales | Botones, selección, enlaces |
+| Gris pizarra | Por hacer | Estado |
+| Azul | En proceso | Estado |
+| Ámbar | Esperando y seguimientos | Estado, «Toca dar seguimiento», tarjetas quietas |
+| Verde | Listo | Estado, pasos hechos |
+| Rojo arcilla | Lo que urge | Vencido, hoy, urgente, importante, borrar |
+| Morado | Informativo | Próximos 7 días, coordinación, «nuevos» en el Resumen |
+
+Antes el ámbar significaba a la vez «Esperando», «Importante» y «vence pronto», y el verde de la marca se confundía con el de «Listo». La prioridad ahora es una escala del mismo rojo (urgente = relleno, importante = contorno). Cada color tiene versión clara y oscura; el **modo oscuro** es café muy oscuro y cálido, y se elige en *Mi perfil → Apariencia* (automático por defecto).
+
 ## Recordatorios
 
 - **Avisos en la app** (campana) en estos casos:

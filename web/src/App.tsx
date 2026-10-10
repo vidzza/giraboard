@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, setUnauthorizedHandler } from './lib/api.ts';
 import { qk, useMe } from './lib/queries.ts';
+import { isLead } from './lib/permissions.ts';
 import { Layout } from './components/Layout.tsx';
 import { ChoosePasswordPage, LoginPage, SetupPage } from './pages/AuthPages.tsx';
 import { TodayPage } from './pages/TodayPage.tsx';
@@ -18,14 +19,20 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage.tsx').then((m) => (
 
 function Splash() {
   return (
-    <div className="flex min-h-dvh items-center justify-center">
-      <img src="/favicon.svg" alt="Cargando" className="size-14 animate-pulse" />
+    <div className="flex min-h-dvh items-center justify-center" role="status" aria-label="Cargando">
+      <img src="/favicon.svg" alt="" className="size-14 animate-pulse" />
     </div>
   );
 }
 
 function PageLoading() {
-  return <p className="py-10 text-center text-ink-3">Cargando…</p>;
+  return (
+    <div className="mx-auto max-w-4xl space-y-3 py-2" role="status" aria-label="Cargando">
+      <div className="h-9 w-56 animate-pulse rounded-lg bg-paper-3" />
+      <div className="h-24 animate-pulse rounded-2xl bg-paper-3" />
+      <div className="h-24 animate-pulse rounded-2xl bg-paper-3" />
+    </div>
+  );
 }
 
 export function App() {
@@ -70,7 +77,7 @@ export function App() {
         <Route path="calendario" element={<Lazy page={<CalendarPage />} />} />
         <Route path="clientes" element={<Lazy page={<ClientsPage />} />} />
         <Route path="clientes/:id" element={<Lazy page={<ClientDetailPage />} />} />
-        <Route path="resumen" element={<Lazy page={<DashboardPage />} />} />
+        <Route path="resumen" element={isLead(me.data) ? <Lazy page={<DashboardPage />} /> : <Navigate to="/" replace />} />
         <Route path="archivo" element={<Lazy page={<ArchivePage />} />} />
         <Route path="ajustes" element={<Lazy page={<SettingsPage />} />} />
         <Route path="*" element={<Navigate to="/" replace />} />

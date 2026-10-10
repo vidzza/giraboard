@@ -6,9 +6,14 @@ import { toast } from 'sonner';
 import {
   Archive,
   ArchiveRestore,
+  Bell,
+  BellOff,
   Check,
   Download,
+  ExternalLink,
+  Eye,
   FileText,
+  History,
   Hourglass,
   Link2,
   ListChecks,
@@ -19,15 +24,16 @@ import {
   Plus,
   Trash2,
   Upload,
+  UserRoundPlus,
+  Users,
   X,
-  History,
-  ExternalLink,
 } from 'lucide-react';
-import { RECURRENCES, RECURRENCE_LABEL, type Status, type TicketDetail } from '../../../shared/types.ts';
+import { RECURRENCES, RECURRENCE_LABEL, type ChecklistItem, type Status, type TicketDetail } from '../../../shared/types.ts';
 import {
   useCategoryMap,
   useCurrentUser,
   useInvalidate,
+  useSettings,
   useTicket,
   useTicketAction,
   useToggleChecklist,
@@ -37,14 +43,17 @@ import {
   type TicketPatch,
 } from '../lib/queries.ts';
 import { api } from '../lib/api.ts';
+import { copyText } from '../lib/clipboard.ts';
 import { formatDateTime, timeAgo } from '../lib/dates.ts';
 import { describeActivity, whatsappLink } from '../lib/activity.ts';
+import { canArchive, canAssignOthers, canDeleteOwn, isAdmin, OWN_DELETE_MINUTES } from '../lib/permissions.ts';
 import { Avatar } from './Avatar.tsx';
 import { AutoTextarea, EditableText } from './Editable.tsx';
-import { useEscape } from './Modal.tsx';
-import { Menu, MenuItem } from './Menu.tsx';
-import { CategoryPicker, ClientPicker, DueDatePicker, PersonPicker, PriorityPicker, StatusPicker } from './Pickers.tsx';
+import { useEscape, useFocusTrap, useLockScroll } from './Modal.tsx';
+import { Menu, MenuItem, MenuLabel } from './Menu.tsx';
+import { CategoryPicker, ClientPicker, DueDatePicker, PeoplePicker, PriorityPicker, StatusPicker } from './Pickers.tsx';
 import { ProgressBar } from './TicketBits.tsx';
+import { askWhatWeAreWaitingFor } from './TicketActions.tsx';
 
 // Notas a medio escribir, por pendiente (se conservan si cierras y vuelves a abrir).
 const commentDrafts = new Map<number, string>();
@@ -52,12 +61,15 @@ const commentDrafts = new Map<number, string>();
 export function TicketDrawer({ id, onClose: closeDrawer }: { id: number; onClose: () => void }) {
   const { data: ticket, error, isLoading } = useTicket(id);
   const qc = useQueryClient();
+  const ref = useRef<HTMLElement>(null);
   // Antes de cerrar, sacar el foco del campo activo para que se guarde lo que se estaba escribiendo.
   const onClose = () => {
     (document.activeElement as HTMLElement | null)?.blur();
     closeDrawer();
   };
   useEscape(onClose);
+  useLockScroll();
+  useFocusTrap(ref);
 
   // Al abrir el pendiente, sus avisos se dan por leídos.
   useEffect(() => {
@@ -67,22 +79,16 @@ export function TicketDrawer({ id, onClose: closeDrawer }: { id: number; onClose
       .catch(() => {});
   }, [id, qc]);
 
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
-
   return createPortal(
     <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 animate-fade bg-ink/25" onClick={onClose} />
+      <div className="absolute inset-0 animate-fade bg-scrim/30" onClick={onClose} />
       <aside
+        ref={ref}
         role="dialog"
         aria-modal="true"
-        aria-label="Detalle del pendiente"
-        className="relative flex h-full w-full max-w-[640px] animate-slide-in flex-col bg-paper shadow-panel sm:border-l sm:border-line"
+        aria-label={ticket ? `Pendiente #${ticket.id}: ${ticket.title}` : 'Detalle del pendiente'}
+        tabIndex={-1}
+        className="relative flex h-full w-full max-w-[680px] animate-slide-in flex-col bg-paper shadow-panel outline-none sm:border-l sm:border-line"
       >
         {isLoading && <DrawerSkeleton onClose={onClose} />}
         {error && (
@@ -102,9 +108,9 @@ export function TicketDrawer({ id, onClose: closeDrawer }: { id: number; onClose
 
 function DrawerSkeleton({ onClose }: { onClose: () => void }) {
   return (
-    <div className="flex flex-col gap-4 p-6">
+    <div className="flex flex-col gap-4 p-6 pt-[max(env(safe-area-inset-top),24px)]">
       <div className="flex justify-end">
-        <button onClick={onClose} className="btn-ghost size-10 px-0" aria-label="Cerrar">
+        <button onClick={onClose} className="btn-ghost btn-icon" aria-label="Cerrar">
           <X className="size-5" />
         </button>
       </div>
@@ -118,9 +124,9 @@ function DrawerSkeleton({ onClose }: { onClose: () => void }) {
 function Section({ title, icon, children, aside }: { title: string; icon: ReactNode; children: ReactNode; aside?: ReactNode }) {
   return (
     <section className="panel p-4 sm:p-5">
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="text-ink-3 [&>svg]:size-[18px]">{icon}</span>
-        <h3 className="font-display text-[17px] font-semibold">{title}</h3>
+        <h3 className="font-display text-[18px] font-semibold">{title}</h3>
         <div className="ml-auto">{aside}</div>
       </div>
       {children}
@@ -128,11 +134,12 @@ function Section({ title, icon, children, aside }: { title: string; icon: ReactN
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
   return (
     <div>
       <span className="label">{label}</span>
       {children}
+      {hint && <p className="mt-1.5 text-[13px] text-ink-3">{hint}</p>}
     </div>
   );
 }
@@ -140,17 +147,27 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function DrawerBody({ ticket, onClose }: { ticket: TicketDetail; onClose: () => void }) {
   const me = useCurrentUser();
   const users = useUserMap();
+  const { data: settings } = useSettings();
   const update = useUpdateTicket();
   const action = useTicketAction();
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [showFollowers, setShowFollowers] = useState(ticket.follower_ids.length > 0);
   const waitingRef = useRef<HTMLInputElement>(null);
+
+  const isAssignee = ticket.assignee_ids.includes(me.id);
+  const isFollower = ticket.follower_ids.includes(me.id);
+  const onlySelf = !canAssignOthers(me, settings);
+  const closed = ticket.status === 'done' || !!ticket.archived_at;
 
   const save = (patch: TicketPatch) => {
     setSaved('saving');
     update.mutate(
       { id: ticket.id, patch },
       {
-        onSuccess: () => setSaved('saved'),
+        onSuccess: (data) => {
+          setSaved('saved');
+          if (data.hidden) onClose();
+        },
         onError: () => setSaved('idle'),
       },
     );
@@ -166,7 +183,16 @@ function DrawerBody({ ticket, onClose }: { ticket: TicketDetail; onClose: () => 
         action: { label: 'Deshacer', onClick: () => save({ status: prev }) },
       });
     }
-    if (s === 'waiting') setTimeout(() => waitingRef.current?.focus(), 80);
+    if (s === 'waiting') {
+      if (!ticket.waiting_on && !ticket.follow_up_date) askWhatWeAreWaitingFor({ ...ticket, status: s });
+      else setTimeout(() => waitingRef.current?.focus(), 80);
+    }
+  };
+
+  const setAssignees = (ids: number[]) => {
+    const leavingMyself = isAssignee && !ids.includes(me.id) && ticket.creator_id !== me.id && !isFollower && me.role === 'member';
+    if (leavingMyself && !window.confirm('Si te quitas, ya no verás este pendiente (a menos que lo hayas creado). ¿Continuar?')) return;
+    save({ assignee_ids: ids });
   };
 
   const archive = (archived: boolean) => {
@@ -178,28 +204,38 @@ function DrawerBody({ ticket, onClose }: { ticket: TicketDetail; onClose: () => 
   };
 
   const remove = () => {
-    if (!window.confirm(`¿Eliminar para siempre el pendiente #${ticket.id}? Esto no se puede deshacer.`)) return;
-    action.mutate({ method: 'del', url: `/tickets/${ticket.id}` }, { onSuccess: () => onClose() });
+    if (!window.confirm(`¿Eliminar para siempre el pendiente #${ticket.id}? Esto no se puede deshacer. (Si solo ya no aplica, mejor archívalo.)`)) return;
+    action.mutate({ method: 'del', url: `/tickets/${ticket.id}` }, { onSuccess: () => (toast('Pendiente eliminado'), onClose()) });
+  };
+
+  const follow = (on: boolean) => {
+    action.mutate(
+      { method: 'post', url: `/tickets/${ticket.id}/follow`, body: { follow: on } },
+      {
+        onSuccess: () => {
+          toast(on ? 'Te llegarán los avisos de este pendiente' : 'Ya no recibirás avisos de este pendiente');
+          if (!on && me.role === 'member' && ticket.creator_id !== me.id) onClose();
+        },
+      },
+    );
   };
 
   const copyLink = async () => {
     const url = `${window.location.origin}/?p=${ticket.id}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success('Enlace copiado. Pégalo en WhatsApp o correo.');
-    } catch {
-      toast(url);
-    }
+    if (await copyText(url)) toast.success('Enlace copiado. Pégalo en WhatsApp o correo.');
+    else toast(url, { description: 'Copia este enlace' });
   };
 
   const creator = users.get(ticket.creator_id);
 
   return (
     <>
-      <header className="flex items-center gap-2 border-b border-line bg-paper/90 px-4 py-2.5 backdrop-blur sm:px-6">
+      <header className="flex items-center gap-1.5 border-b border-line bg-paper/95 px-3 pt-[max(env(safe-area-inset-top),10px)] pb-2.5 backdrop-blur sm:px-5">
         <span className="rounded-lg bg-paper-2 px-2 py-1 text-sm font-bold text-ink-2 tabular-nums">#{ticket.id}</span>
-        <span className="text-[13px] font-medium text-ink-3" aria-live="polite">
-          {saved === 'saving' ? 'Guardando…' : saved === 'saved' ? (
+        <span className="min-w-0 truncate text-[13px] font-medium text-ink-3" aria-live="polite">
+          {saved === 'saving' ? (
+            'Guardando…'
+          ) : saved === 'saved' ? (
             <span className="inline-flex items-center gap-1 text-moss">
               <Check className="size-4" /> Guardado
             </span>
@@ -207,53 +243,68 @@ function DrawerBody({ ticket, onClose }: { ticket: TicketDetail; onClose: () => 
             'Archivado'
           ) : null}
         </span>
-        <div className="ml-auto flex items-center gap-1">
-          <button onClick={copyLink} className="btn-ghost btn-sm" title="Copiar enlace">
+        <div className="ml-auto flex items-center gap-0.5">
+          {!isAssignee && (
+            <button
+              onClick={() => follow(!isFollower)}
+              className={`btn-ghost btn-sm ${isFollower ? 'text-pine' : ''}`}
+              title={isFollower ? 'Dejar de recibir avisos de este pendiente' : 'Recibir avisos de este pendiente'}
+            >
+              {isFollower ? <BellOff className="size-4" /> : <Bell className="size-4" />}
+              <span className="hidden sm:inline">{isFollower ? 'Dejar de seguir' : 'Seguir'}</span>
+            </button>
+          )}
+          <button onClick={copyLink} className="btn-ghost btn-sm" title="Copiar enlace" aria-label="Copiar enlace">
             <Link2 className="size-4" />
-            <span className="hidden sm:inline">Copiar enlace</span>
+            <span className="hidden sm:inline">Enlace</span>
           </button>
-          <Menu
-            trigger={({ toggle }) => (
-              <button onClick={toggle} className="btn-ghost size-10 px-0" aria-label="Más opciones">
-                <MoreHorizontal className="size-5" />
-              </button>
-            )}
-          >
-            {(close) => (
-              <>
-                {ticket.archived_at ? (
-                  <MenuItem icon={<ArchiveRestore />} onClick={() => (close(), archive(false))}>
-                    Sacar del archivo
-                  </MenuItem>
-                ) : (
-                  <MenuItem icon={<Archive />} onClick={() => (close(), archive(true))}>
-                    Archivar (ya no aplica)
-                  </MenuItem>
-                )}
-                {me.role === 'admin' && (
-                  <MenuItem danger icon={<Trash2 />} onClick={() => (close(), remove())}>
-                    Eliminar para siempre
-                  </MenuItem>
-                )}
-              </>
-            )}
-          </Menu>
-          <button onClick={onClose} className="btn-ghost size-10 px-0" aria-label="Cerrar">
+          {(canArchive(me, ticket) || isAdmin(me)) && (
+            <Menu
+              title={`Pendiente #${ticket.id}`}
+              trigger={({ toggle, open }) => (
+                <button onClick={toggle} aria-expanded={open} className="btn-ghost btn-icon" aria-label="Más opciones">
+                  <MoreHorizontal className="size-5" />
+                </button>
+              )}
+            >
+              {(close) => (
+                <>
+                  {canArchive(me, ticket) &&
+                    (ticket.archived_at ? (
+                      <MenuItem icon={<ArchiveRestore />} onClick={() => (close(), archive(false))}>
+                        Sacar del archivo
+                      </MenuItem>
+                    ) : (
+                      <MenuItem icon={<Archive />} onClick={() => (close(), archive(true))}>
+                        Archivar (ya no aplica)
+                      </MenuItem>
+                    ))}
+                  {isAdmin(me) && (
+                    <MenuItem danger icon={<Trash2 />} onClick={() => (close(), remove())}>
+                      Eliminar para siempre
+                    </MenuItem>
+                  )}
+                </>
+              )}
+            </Menu>
+          )}
+          <button onClick={onClose} className="btn-ghost btn-icon" aria-label="Cerrar">
             <X className="size-5" />
           </button>
         </div>
       </header>
 
-      <div className="scroll-thin flex-1 space-y-4 overflow-y-auto px-4 pt-5 pb-10 sm:px-6">
+      <div className="scroll-thin flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pt-5 pb-[max(env(safe-area-inset-bottom),40px)] sm:px-6">
         <EditableText
           value={ticket.title}
           allowEmpty={false}
           maxLength={200}
+          label="Título del pendiente"
           onSave={(title) => save({ title })}
-          className="-mx-2 w-[calc(100%+1rem)] rounded-xl px-2 py-1 font-display text-[26px] leading-tight font-semibold text-ink hover:bg-paper-2 focus:bg-card focus:outline-none focus:ring-3 focus:ring-pine/15"
+          className="-mx-2 w-[calc(100%+1rem)] rounded-xl px-2 py-1 font-display text-[24px] leading-tight font-semibold text-ink hover:bg-paper-2 focus:bg-card focus:ring-3 focus:ring-pine/20 focus:outline-none sm:text-[26px]"
         />
         <p className="-mt-2 text-[13px] text-ink-3">
-          Creado por {creator?.name ?? 'alguien'} · {formatDateTime(ticket.created_at)}
+          {creator?.id === me.id ? 'Lo pediste tú' : `Lo pidió ${creator?.name ?? 'alguien'}`} · {formatDateTime(ticket.created_at)}
           {ticket.completed_at && ticket.status === 'done' && <> · Terminado {formatDateTime(ticket.completed_at)}</>}
         </p>
 
@@ -264,27 +315,35 @@ function DrawerBody({ ticket, onClose }: { ticket: TicketDetail; onClose: () => 
             <div className="flex items-center gap-2 font-semibold text-amber">
               <Hourglass className="size-4" /> ¿Qué estamos esperando?
             </div>
-            <WaitingOnInput
-              inputRef={waitingRef}
-              value={ticket.waiting_on ?? ''}
-              onSave={(waiting_on) => save({ waiting_on: waiting_on || null })}
-            />
+            <WaitingOnInput inputRef={waitingRef} value={ticket.waiting_on ?? ''} onSave={(waiting_on) => save({ waiting_on: waiting_on || null })} />
             <div>
-              <span className="label text-amber/80">Volver a revisar el…</span>
-              <DueDatePicker
-                value={ticket.follow_up_date}
-                onChange={(follow_up_date) => save({ follow_up_date })}
-                noneLabel="Sin recordatorio"
-              />
-              <p className="mt-2 text-[13px] text-ink-2">Ese día te aparecerá en «Mi día» para dar seguimiento.</p>
+              <span className="label text-amber">Volver a revisar el…</span>
+              <DueDatePicker value={ticket.follow_up_date} onChange={(follow_up_date) => save({ follow_up_date })} noneLabel="Sin recordatorio" />
+              <p className="mt-2 text-[13px] text-ink-2">Ese día aparecerá en «Mi día» de los responsables para dar seguimiento.</p>
             </div>
           </div>
         )}
 
         <section className="panel space-y-5 p-4 sm:p-5">
-          <Field label="¿Quién lo tiene?">
-            <PersonPicker value={ticket.assignee_id} onChange={(assignee_id) => save({ assignee_id })} />
+          <Field label="¿Quién se encarga?">
+            <PeoplePicker value={ticket.assignee_ids} onChange={setAssignees} meId={me.id} onlySelf={onlySelf} />
           </Field>
+          {showFollowers || ticket.follower_ids.length > 0 ? (
+            <Field label="En copia (lo ven y reciben avisos)">
+              <PeoplePicker
+                mode="followers"
+                value={ticket.follower_ids}
+                exclude={ticket.assignee_ids}
+                onChange={(follower_ids) => save({ follower_ids })}
+                meId={me.id}
+                onlySelf={onlySelf}
+              />
+            </Field>
+          ) : (
+            <button type="button" className="btn-ghost btn-sm -mt-2 -ml-2" onClick={() => setShowFollowers(true)}>
+              <Eye className="size-4" /> Poner a alguien en copia
+            </button>
+          )}
           <Field label="¿Para cuándo?">
             <DueDatePicker value={ticket.due_date} onChange={(due_date) => save({ due_date })} />
           </Field>
@@ -297,12 +356,7 @@ function DrawerBody({ ticket, onClose }: { ticket: TicketDetail; onClose: () => 
               <div className="mt-2 flex flex-wrap gap-2">
                 {ticket.client_phone && (
                   <>
-                    <a
-                      href={whatsappLink(ticket.client_phone)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn-secondary btn-sm text-moss"
-                    >
+                    <a href={whatsappLink(ticket.client_phone)} target="_blank" rel="noreferrer" className="btn-secondary btn-sm text-moss">
                       <MessageCircle className="size-4" /> WhatsApp
                     </a>
                     <a href={`tel:${ticket.client_phone}`} className="btn-secondary btn-sm">
@@ -323,11 +377,12 @@ function DrawerBody({ ticket, onClose }: { ticket: TicketDetail; onClose: () => 
             <Field label="Prioridad">
               <PriorityPicker value={ticket.priority} onChange={(priority) => save({ priority })} />
             </Field>
-            <Field label="¿Se repite?">
+            <Field label="¿Se repite?" hint={ticket.recurrence !== 'none' ? 'Al terminarlo se crea solo el siguiente.' : undefined}>
               <select
                 className="input min-w-44"
                 value={ticket.recurrence}
                 onChange={(e) => save({ recurrence: e.target.value as TicketDetail['recurrence'] })}
+                aria-label="¿Se repite?"
               >
                 {RECURRENCES.map((r) => (
                   <option key={r} value={r}>
@@ -343,6 +398,7 @@ function DrawerBody({ ticket, onClose }: { ticket: TicketDetail; onClose: () => 
               minRows={3}
               maxLength={10000}
               value={ticket.description}
+              label="Notas y detalles"
               onSave={(description) => save({ description })}
               placeholder="Número de póliza, datos importantes, qué falta…"
               className="input min-h-24 py-2.5 leading-relaxed"
@@ -350,7 +406,7 @@ function DrawerBody({ ticket, onClose }: { ticket: TicketDetail; onClose: () => 
           </Field>
         </section>
 
-        <Checklist ticket={ticket} />
+        <Checklist ticket={ticket} closed={closed} />
         <Attachments ticket={ticket} />
         <Timeline ticket={ticket} />
       </div>
@@ -376,6 +432,8 @@ function WaitingOnInput({
       ref={inputRef}
       className="input"
       value={draft}
+      maxLength={200}
+      aria-label="¿Qué estamos esperando?"
       placeholder="Ej. Que el cliente mande su INE, respuesta de la aseguradora…"
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => draft.trim() !== value && onSave(draft.trim())}
@@ -384,7 +442,60 @@ function WaitingOnInput({
   );
 }
 
-function Checklist({ ticket }: { ticket: TicketDetail }) {
+/** Botón con la cara de quien hace el paso; al tocarlo se elige a otra persona. */
+function StepAssignee({ item, ticket }: { item: ChecklistItem; ticket: TicketDetail }) {
+  const me = useCurrentUser();
+  const users = useUserMap();
+  const { data: all = [] } = useUsers();
+  const { data: settings } = useSettings();
+  const action = useTicketAction();
+  const who = item.assignee_id ? users.get(item.assignee_id) : null;
+  const others = canAssignOthers(me, settings);
+  const options = all.filter((u) => u.active && (others || u.id === me.id));
+  const assign = (assignee_id: number | null) =>
+    action.mutate({ method: 'patch', url: `/checklist/${item.id}`, body: { assignee_id } });
+  return (
+    <Menu
+      title={`¿Quién hace «${item.text.length > 40 ? `${item.text.slice(0, 38)}…` : item.text}»?`}
+      width="w-60"
+      trigger={({ toggle, open }) => (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          className={`flex min-h-9 items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-0.5 text-[13px] font-semibold transition-colors ${
+            who ? 'bg-paper-2 text-ink-2 hover:bg-paper-3' : 'text-ink-3 hover:bg-paper-2 hover:text-ink-2'
+          }`}
+          title={who ? `Lo hace ${who.name}. Toca para cambiar.` : 'Encargarle este paso a alguien'}
+        >
+          {who ? <Avatar user={who} size="xs" /> : <UserRoundPlus className="ml-1.5 size-4" />}
+          <span className="max-w-24 truncate">{who ? (who.id === me.id ? 'Yo' : who.name.split(' ')[0]) : 'Encargar'}</span>
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <MenuLabel>¿Quién hace este paso?</MenuLabel>
+          {options.map((u) => (
+            <MenuItem key={u.id} active={u.id === item.assignee_id} icon={<Avatar user={u} size="xs" />} onClick={() => (close(), assign(u.id))}>
+              {u.id === me.id ? `Yo (${u.name})` : u.name}
+              {!ticket.assignee_ids.includes(u.id) && !ticket.follower_ids.includes(u.id) && u.role === 'member' && (
+                <span className="ml-auto text-[12px] text-ink-3">quedará en copia</span>
+              )}
+            </MenuItem>
+          ))}
+          {item.assignee_id && (
+            <MenuItem icon={<X />} onClick={() => (close(), assign(null))}>
+              Que no sea de nadie en particular
+            </MenuItem>
+          )}
+        </>
+      )}
+    </Menu>
+  );
+}
+
+function Checklist({ ticket, closed }: { ticket: TicketDetail; closed: boolean }) {
   const toggle = useToggleChecklist();
   const action = useTicketAction();
   const [text, setText] = useState('');
@@ -397,50 +508,75 @@ function Checklist({ ticket }: { ticket: TicketDetail }) {
     action.mutate({ method: 'post', url: `/tickets/${ticket.id}/checklist`, body: { text: t } });
   };
 
+  const remove = (item: ChecklistItem) => {
+    action.mutate({ method: 'del', url: `/checklist/${item.id}` });
+    toast(`Se quitó el paso «${item.text.length > 40 ? `${item.text.slice(0, 38)}…` : item.text}»`, {
+      action: {
+        label: 'Deshacer',
+        onClick: () =>
+          action.mutate({ method: 'post', url: `/tickets/${ticket.id}/checklist`, body: { text: item.text, assignee_id: item.assignee_id } }),
+      },
+    });
+  };
+
   return (
     <Section
       title="Pasos"
       icon={<ListChecks />}
-      aside={ticket.checklist.length > 0 && <span className="text-sm font-bold text-ink-2">{Math.round((done / ticket.checklist.length) * 100)}%</span>}
     >
       {ticket.checklist.length > 0 && <ProgressBar done={done} total={ticket.checklist.length} className="mb-3" />}
       <ul className="space-y-1">
         {ticket.checklist.map((item) => (
-          <li key={item.id} className="group flex items-center gap-3 rounded-xl px-1 py-1 hover:bg-paper-2/60">
+          <li key={item.id} className="group flex items-center gap-2 rounded-xl py-0.5 pr-1 hover:bg-paper-2/60">
             <button
               type="button"
               onClick={() => toggle.mutate({ item, done: !item.done })}
-              aria-label={item.done ? 'Desmarcar' : 'Marcar como hecho'}
-              className={`flex size-6 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${
-                item.done ? 'border-moss bg-moss text-white' : 'border-ink-3/50 hover:border-moss'
-              }`}
+              aria-label={item.done ? `Desmarcar «${item.text}»` : `Marcar «${item.text}» como hecho`}
+              aria-pressed={!!item.done}
+              className="flex size-11 shrink-0 items-center justify-center"
             >
-              {item.done ? <Check className="size-4" strokeWidth={3} /> : null}
+              <span
+                className={`flex size-6 items-center justify-center rounded-md border-2 transition-colors ${
+                  item.done ? 'border-moss-solid bg-moss-solid text-white' : 'border-field hover:border-moss-solid'
+                }`}
+              >
+                {item.done ? <Check className="size-4" strokeWidth={3} /> : null}
+              </span>
             </button>
-            <span className={`flex-1 text-[15px] ${item.done ? 'text-ink-3 line-through' : 'text-ink'}`}>{item.text}</span>
+            <span className={`min-w-0 flex-1 text-[15px] break-words ${item.done ? 'text-ink-3 line-through' : 'text-ink'}`}>{item.text}</span>
+            <StepAssignee item={item} ticket={ticket} />
             <button
               type="button"
-              onClick={() => action.mutate({ method: 'del', url: `/checklist/${item.id}` })}
-              className="btn-ghost btn-sm text-ink-3 opacity-0 group-hover:opacity-100 focus:opacity-100"
-              aria-label="Quitar paso"
+              onClick={() => remove(item)}
+              className="btn-ghost btn-sm px-2 text-ink-3 hover:text-clay can-hover:opacity-0 can-hover:group-hover:opacity-100 can-hover:focus:opacity-100"
+              aria-label={`Quitar el paso «${item.text}»`}
             >
               <Trash2 className="size-4" />
             </button>
           </li>
         ))}
       </ul>
-      <div className="mt-2 flex gap-2">
-        <input
-          className="input"
-          value={text}
-          placeholder={ticket.checklist.length ? 'Agregar otro paso…' : 'Divide el pendiente en pasos para ver el avance'}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
-        />
-        <button className="btn-secondary shrink-0" onClick={add} disabled={!text.trim()}>
-          <Plus className="size-4" /> Agregar
-        </button>
-      </div>
+      {!closed || ticket.checklist.length === 0 ? (
+        <div className="mt-2 flex gap-2">
+          <input
+            className="input"
+            value={text}
+            maxLength={300}
+            aria-label="Nuevo paso"
+            placeholder={ticket.checklist.length ? 'Agregar otro paso…' : 'Divide el pendiente en pasos para ver el avance'}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && add()}
+          />
+          <button className="btn-secondary shrink-0" onClick={add} disabled={!text.trim()}>
+            <Plus className="size-4" /> <span className="hidden sm:inline">Agregar</span>
+          </button>
+        </div>
+      ) : null}
+      {ticket.checklist.length > 0 && (
+        <p className="mt-2 flex items-center gap-1.5 text-[13px] text-ink-3">
+          <Users className="size-3.5" /> Encarga cada paso a quien lo hará: le aparecerá en su «Mi día».
+        </p>
+      )}
     </Section>
   );
 }
@@ -450,29 +586,37 @@ function formatSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+const MAX_UPLOAD_MB = 25;
+
 function Attachments({ ticket }: { ticket: TicketDetail }) {
   const me = useCurrentUser();
   const users = useUserMap();
   const invalidate = useInvalidate();
   const action = useTicketAction();
-  const [uploading, setUploading] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const upload = async (files: FileList | null) => {
     if (!files?.length) return;
-    setUploading(true);
+    const list = Array.from(files);
+    const tooBig = list.filter((f) => f.size > MAX_UPLOAD_MB * 1024 * 1024);
+    if (tooBig.length) toast.error(`«${tooBig[0].name}» pesa más de ${MAX_UPLOAD_MB} MB`);
+    const ok = list.filter((f) => f.size <= MAX_UPLOAD_MB * 1024 * 1024);
+    let uploaded = 0;
     try {
-      for (const file of Array.from(files)) {
+      for (const [i, file] of ok.entries()) {
+        setUploading(ok.length > 1 ? `Subiendo ${i + 1} de ${ok.length}…` : 'Subiendo…');
         const form = new FormData();
         form.append('file', file);
         await api.upload(`/tickets/${ticket.id}/attachments`, form);
+        uploaded++;
       }
-      toast.success(files.length > 1 ? 'Archivos subidos' : 'Archivo subido');
+      if (uploaded) toast.success(uploaded > 1 ? `${uploaded} archivos subidos` : 'Archivo subido');
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
-      setUploading(false);
+      setUploading(null);
       invalidate();
       if (fileRef.current) fileRef.current.value = '';
     }
@@ -483,8 +627,8 @@ function Attachments({ ticket }: { ticket: TicketDetail }) {
       title="Archivos"
       icon={<Paperclip />}
       aside={
-        <button className="btn-secondary btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
-          <Upload className="size-4" /> {uploading ? 'Subiendo…' : 'Subir archivo'}
+        <button className="btn-secondary btn-sm" onClick={() => fileRef.current?.click()} disabled={!!uploading}>
+          <Upload className="size-4" /> {uploading ?? 'Subir archivo'}
         </button>
       }
     >
@@ -503,35 +647,34 @@ function Attachments({ ticket }: { ticket: TicketDetail }) {
         className={`rounded-xl transition-colors ${dragOver ? 'bg-pine-soft ring-2 ring-pine/40' : ''}`}
       >
         {ticket.attachments.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-line-2 px-4 py-5 text-center text-[14px] text-ink-3">
-            Arrastra aquí pólizas, INE, comprobantes o fotos (PDF o imagen, hasta 25 MB).
-          </p>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="w-full rounded-xl border border-dashed border-field px-4 py-5 text-center text-[14px] text-ink-3 hover:bg-paper-2/60"
+          >
+            <span className="touch:hidden">Arrastra aquí</span>
+            <span className="hidden touch:inline">Toca para subir</span> pólizas, INE, comprobantes o fotos (hasta {MAX_UPLOAD_MB} MB).
+          </button>
         ) : (
           <ul className="space-y-1.5">
             {ticket.attachments.map((a) => (
-              <li key={a.id} className="group flex items-center gap-3 rounded-xl border border-line px-3 py-2">
+              <li key={a.id} className="group flex items-center gap-2 rounded-xl border border-line px-3 py-2">
                 <FileText className="size-5 shrink-0 text-ink-3" />
-                <a
-                  href={`/api/attachments/${a.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="min-w-0 flex-1 hover:underline"
-                >
+                <a href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer" className="min-w-0 flex-1 hover:underline">
                   <span className="block truncate text-[15px] font-semibold">{a.filename}</span>
                   <span className="text-[12px] text-ink-3">
                     {formatSize(a.size)} · {users.get(a.user_id)?.name} · {timeAgo(a.created_at)}
                   </span>
                 </a>
-                <a href={`/api/attachments/${a.id}?download`} className="btn-ghost btn-sm" aria-label="Descargar">
+                <a href={`/api/attachments/${a.id}?download`} className="btn-ghost btn-sm px-2" aria-label={`Descargar ${a.filename}`}>
                   <Download className="size-4" />
                 </a>
-                {(a.user_id === me.id || me.role === 'admin') && (
+                {canDeleteOwn(me, a.user_id, a.created_at) && (
                   <button
-                    className="btn-ghost btn-sm text-ink-3 opacity-0 group-hover:opacity-100 focus:opacity-100"
-                    aria-label="Borrar archivo"
-                    onClick={() =>
-                      window.confirm(`¿Borrar «${a.filename}»?`) && action.mutate({ method: 'del', url: `/attachments/${a.id}` })
-                    }
+                    className="btn-ghost btn-sm px-2 text-ink-3 hover:text-clay"
+                    aria-label={`Borrar ${a.filename}`}
+                    title={isAdmin(me) ? 'Borrar' : `Puedes borrarlo durante ${OWN_DELETE_MINUTES} minutos después de subirlo`}
+                    onClick={() => window.confirm(`¿Borrar «${a.filename}»?`) && action.mutate({ method: 'del', url: `/attachments/${a.id}` })}
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -558,7 +701,11 @@ function Timeline({ ticket }: { ticket: TicketDetail }) {
     if (v) commentDrafts.set(ticket.id, v);
     else commentDrafts.delete(ticket.id);
   };
-  const others = allUsers.filter((u) => u.active && u.id !== me.id);
+  // Primero quienes ya participan; luego el resto.
+  const involved = new Set([...ticket.assignee_ids, ...ticket.follower_ids, ticket.creator_id]);
+  const others = allUsers
+    .filter((u) => u.active && u.id !== me.id)
+    .sort((a, b) => Number(involved.has(b.id)) - Number(involved.has(a.id)));
 
   const send = () => {
     const text = body.trim();
@@ -568,14 +715,16 @@ function Timeline({ ticket }: { ticket: TicketDetail }) {
 
   const mention = (username: string) => {
     const tag = `@${username}`;
-    if (body.includes(tag)) return;
+    if (body.includes(tag)) {
+      setBody(body.split(tag).join('').replace(/ {2,}/g, ' ').trimStart());
+      return;
+    }
     setBody(`${body}${body && !body.endsWith(' ') ? ' ' : ''}${tag} `);
   };
 
-  type Entry = { kind: 'comment' | 'activity'; at: string; key: string; node: ReactNode };
+  type Entry = { at: string; key: string; node: ReactNode };
   const entries: Entry[] = [
     ...ticket.comments.map((c) => ({
-      kind: 'comment' as const,
       at: c.created_at,
       key: `c${c.id}`,
       node: (
@@ -587,16 +736,16 @@ function Timeline({ ticket }: { ticket: TicketDetail }) {
               <span className="text-[12px] text-ink-3" title={formatDateTime(c.created_at)}>
                 {timeAgo(c.created_at)}
               </span>
-              {(c.user_id === me.id || me.role === 'admin') && (
+              {canDeleteOwn(me, c.user_id, c.created_at) && (
                 <button
-                  className="ml-auto text-[12px] font-semibold text-ink-3 hover:text-clay"
+                  className="ml-auto min-h-8 px-1 text-[12px] font-semibold text-ink-3 hover:text-clay"
                   onClick={() => window.confirm('¿Borrar esta nota?') && action.mutate({ method: 'del', url: `/comments/${c.id}` })}
                 >
                   Borrar
                 </button>
               )}
             </div>
-            <p className="mt-1 rounded-2xl rounded-tl-md border border-line bg-paper/70 px-3.5 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap">
+            <p className="mt-1 rounded-2xl rounded-tl-md border border-line bg-paper/70 px-3.5 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap">
               {c.body}
             </p>
           </div>
@@ -606,12 +755,11 @@ function Timeline({ ticket }: { ticket: TicketDetail }) {
     ...ticket.activity
       .filter((a) => a.type !== 'comment')
       .map((a) => ({
-        kind: 'activity' as const,
         at: a.created_at,
         key: `a${a.id}`,
         node: (
-          <div className="flex items-center gap-3 pl-1.5 text-[14px] text-ink-2">
-            <span className="flex w-6 justify-center">
+          <div className="flex items-start gap-3 pl-1.5 text-[14px] text-ink-2">
+            <span className="flex w-6 shrink-0 justify-center pt-2">
               <span className="size-2 rounded-full bg-line-2" />
             </span>
             <span>
@@ -631,13 +779,14 @@ function Timeline({ ticket }: { ticket: TicketDetail }) {
   return (
     <Section title="Bitácora" icon={<History />}>
       <div className="mb-4 flex gap-3">
-        <Avatar user={me} size="md" />
-        <div className="flex-1">
+        <Avatar user={me} size="md" className="hidden sm:inline-flex" />
+        <div className="min-w-0 flex-1">
           <AutoTextarea
             minRows={2}
             maxLength={5000}
             className="input py-2.5 leading-relaxed"
-            placeholder="Escribe un avance o nota… (ej. «Le llamé, queda de mandar los papeles el lunes»)"
+            aria-label="Escribir una nota"
+            placeholder="Escribe un avance… (ej. «Le llamé, queda de mandar los papeles el lunes»)"
             value={body}
             onChange={(e) => setBody(e.target.value)}
             onKeyDown={(e) => {
@@ -652,11 +801,14 @@ function Timeline({ ticket }: { ticket: TicketDetail }) {
                 <button
                   key={u.id}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => mention(u.username)}
-                  className={`inline-flex items-center gap-1 rounded-full border py-0.5 pr-2 pl-0.5 text-[12px] font-semibold transition-colors ${
+                  className={`inline-flex min-h-8 items-center gap-1 rounded-full border py-0.5 pr-2.5 pl-0.5 text-[13px] font-semibold transition-colors ${
                     on ? 'border-pine bg-pine-soft text-pine' : 'border-line-2 text-ink-2 hover:bg-paper-2'
                   }`}
-                  title={`Le llegará un aviso a ${u.name}`}
+                  title={
+                    involved.has(u.id) ? `Le llegará un aviso a ${u.name}` : `${u.name} quedará en copia para poder verlo y le llegará un aviso`
+                  }
                 >
                   <Avatar user={u} size="xs" /> {u.name.split(' ')[0]}
                 </button>

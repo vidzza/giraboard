@@ -36,16 +36,17 @@ Big project-management tools are built for software teams and feel overwhelming 
 
 | | |
 |---|---|
-| 🗓️ **My Day** | Overdue, due today, follow-ups, next 7 days, stale and undated tasks — for you, a teammate or the whole team. |
-| 🗂️ **Board** | Four clear statuses (*To do · In progress · Waiting · Done*), drag & drop, a per-person view and filters. |
-| 📋 **Task detail** | Assignee, due date, client, type, priority, recurrence, notes, **checklist with progress bar**, file attachments and a full activity timeline. |
+| 🗓️ **My Day** | Overdue, due today, follow-ups, checklist steps assigned to you, next 7 days, what you delegated and what you're copied on. |
+| 📥 **Unassigned inbox** | Tasks nobody has taken land in an inbox for admins and managers, with a one-tap "Assign" button. Nothing is left without an owner. |
+| 🗂️ **Board** | Four clear statuses (*To do · In progress · Waiting · Done*), drag & drop or a "Move" button, a per-person view and filters. One column at a time on phones. |
+| 📋 **Task detail** | **Multiple assignees**, **followers**, due date, client, type, priority, recurrence, notes, **checklist steps with owners and a progress bar**, attachments and a full timeline. |
 | 👥 **Clients** | Every task linked to a client, with history and one-tap **WhatsApp** / call buttons. |
 | 📅 **Calendar** | Due dates and follow-ups by month. |
 | 📊 **Overview** | Workload per person, what's been waiting longest, stale tasks, weekly throughput and a team activity feed. |
 | 🔔 **Real-time & reminders** | Live updates across screens, in-app and browser notifications, @mentions and daily reminders for due tasks and follow-ups. |
-| 🔐 **Accounts** | Admin and team roles, temporary passwords that users replace on first login, deactivate someone and hand their tasks to a teammate, and terminal recovery if the admin gets locked out. |
+| 🔐 **Roles & permissions** | **Admin**, **Manager** (sees everything, assigns work) and **Team** (sees only their own work), enforced server-side. Only admins delete. Temporary passwords and terminal recovery. |
 | 💾 **Your data** | Single SQLite file, automatic daily backups, one-click backup download and CSV export for Excel. |
-| 📱 **Works everywhere** | Responsive on phones, can be installed to the home screen, keyboard shortcuts (`N` new task, `/` search). |
+| 📱 **Works everywhere** | Built for phones (large targets, bottom-sheet menus, no zoom-on-focus) and desktops (`N` new task, `/` search). **Light, dark or automatic** theme with accessible (WCAG AA) colors. |
 
 <table>
   <tr>
@@ -87,7 +88,9 @@ npm install
 npm run probar
 ```
 
-Open http://localhost:5173 and sign in with a demo user: `ana` (admin), `luis` or `carla`, password `demo1234`. The demo data is fictional.
+Open http://localhost:5173 and sign in with a demo user: `ana` (admin), `marta` (manager), `luis` or `carla` (team), password `demo1234`. The demo data is fictional.
+
+Run the automated permission tests with `npm test`.
 
 To see the first-run experience instead (empty install, setup screen):
 
@@ -105,7 +108,7 @@ Giraboard is a **single Node.js process with an embedded SQLite database**. Ther
 sudo ./deploy/install.sh tasks.your-domain.com
 ```
 
-There are also modes for a **Raspberry Pi behind Cloudflare Tunnel** (`--tunel`, no open ports) and **office LAN only** (`--red-local`). Running the same command again updates the app (with an automatic backup first).
+There are also modes for a **Raspberry Pi behind Cloudflare Tunnel** (`--tunel`, no open ports) and **office LAN only** (`--red-local`). It starts on boot, one machine can host **several independent boards** (`--nombre sales --puerto 3001`), and `--actualizar` updates all of them after an automatic backup.
 
 See the full **[deployment guide](docs/DEPLOYMENT.md)** for DNS, first-run setup, backups, updates and troubleshooting.
 

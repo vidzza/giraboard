@@ -148,15 +148,69 @@ const MIGRATIONS: string[] = [
   ALTER TABLE sessions ADD COLUMN last_seen_at TEXT;
   CREATE INDEX idx_sessions_user ON sessions(user_id);
   `,
+  // 3: jerarquía (rol Coordinación), varios responsables, «en copia» y pasos con persona
+  `
+  CREATE TABLE users_new (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin','manager','member')),
+    color TEXT NOT NULL DEFAULT '#1E5B4F',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    last_login_at TEXT
+  );
+  INSERT INTO users_new (id, name, username, password_hash, role, color, active, created_at, must_change_password, last_login_at)
+    SELECT id, name, username, password_hash, role, color, active, created_at, must_change_password, last_login_at FROM users;
+  DROP TABLE users;
+  ALTER TABLE users_new RENAME TO users;
+
+  CREATE TABLE ticket_people (
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    role TEXT NOT NULL CHECK (role IN ('assignee','follower')),
+    added_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (ticket_id, user_id)
+  );
+  CREATE INDEX idx_ticket_people_user ON ticket_people(user_id, role);
+  INSERT INTO ticket_people (ticket_id, user_id, role)
+    SELECT id, assignee_id, 'assignee' FROM tickets WHERE assignee_id IS NOT NULL;
+  -- La columna vieja ya no se usa (los responsables viven en ticket_people).
+  DROP INDEX IF EXISTS idx_tickets_assignee;
+  UPDATE tickets SET assignee_id = NULL;
+
+  ALTER TABLE checklist_items ADD COLUMN assignee_id INTEGER REFERENCES users(id);
+  `,
+  // 4: colores con mejor contraste (texto blanco ≥ 4.5:1) e índice para «pasos que te tocan»
+  `
+  UPDATE users SET color = '#8A5D0B' WHERE upper(color) = '#C28A1E';
+  UPDATE categories SET color = '#8A5D0B' WHERE upper(color) = '#C28A1E';
+  UPDATE categories SET color = '#7A5530' WHERE upper(color) = '#9A6B3F';
+  CREATE INDEX IF NOT EXISTS idx_checklist_assignee ON checklist_items(assignee_id, done);
+  `,
 ];
 
+/**
+ * Aplica las migraciones pendientes. Las llaves foráneas se apagan mientras tanto
+ * (así se puede reconstruir una tabla, como recomienda SQLite) y se verifican antes de guardar.
+ */
 function migrate() {
   const current = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
-  for (let v = current; v < MIGRATIONS.length; v++) {
-    tx(() => {
-      db.exec(MIGRATIONS[v]);
-      db.exec(`PRAGMA user_version = ${v + 1}`);
-    });
+  if (current >= MIGRATIONS.length) return;
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    for (let v = current; v < MIGRATIONS.length; v++) {
+      tx(() => {
+        db.exec(MIGRATIONS[v]);
+        const broken = db.prepare('PRAGMA foreign_key_check').all();
+        if (broken.length) throw new Error(`La migración ${v + 1} dejó referencias rotas: ${JSON.stringify(broken.slice(0, 3))}`);
+        db.exec(`PRAGMA user_version = ${v + 1}`);
+      });
+    }
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
   }
 }
 

@@ -1,24 +1,31 @@
 import { useState, type ReactNode } from 'react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { AlertTriangle, CheckCircle2, Hourglass, Inbox, Moon, Sparkles, Table2, BarChart3 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Hourglass, Inbox, Moon, Table2, BarChart3, UserRoundPlus } from 'lucide-react';
 import { STALE_DAYS } from '../../../shared/types.ts';
-import { useActivity, useCategoryMap, useStats, useUserMap } from '../lib/queries.ts';
+import { sortTickets, useActivity, useCategoryMap, useStats, useTickets, useUserMap } from '../lib/queries.ts';
 import { describeActivity } from '../lib/activity.ts';
 import { parseDay, timeAgo } from '../lib/dates.ts';
 import { useUI } from '../lib/ui.tsx';
 import { Avatar } from '../components/Avatar.tsx';
 import { TicketRow } from '../components/TicketRow.tsx';
+import { AssignMenuButton } from '../components/TicketActions.tsx';
 
-// Validado con el revisor de paletas (contraste y daltonismo) contra la superficie #FFFDF9.
-const SERIES = { done: { color: '#1F8A70', label: 'Terminados' }, created: { color: '#9479C2', label: 'Nuevos' } };
+// Colores de la gráfica: verde = terminados (como «Listo»), morado = nuevos. Con contraste ≥ 3:1 en modo claro y oscuro.
+const SERIES = {
+  done: { color: 'var(--color-chart-done)', label: 'Terminados' },
+  created: { color: 'var(--color-chart-new)', label: 'Nuevos' },
+};
 
 export function DashboardPage() {
   const ui = useUI();
-  const { data: stats, isLoading } = useStats();
+  const { data: stats, isLoading, error } = useStats();
+  const { data: tickets = [] } = useTickets();
+  const unassigned = sortTickets(tickets.filter((t) => t.status !== 'done' && !t.archived_at && t.assignee_ids.length === 0));
   const users = useUserMap();
   const categories = useCategoryMap();
 
+  if (error) return <p className="text-ink-2">{error.message}</p>;
   if (isLoading || !stats) return <p className="text-ink-3">Cargando resumen…</p>;
 
   const maxOpen = Math.max(1, ...stats.per_user.map((u) => u.open));
@@ -31,7 +38,7 @@ export function DashboardPage() {
     <div className="mx-auto max-w-6xl">
       <header>
         <p className="eyebrow">Cómo va el negocio</p>
-        <h1 className="font-display text-[32px] leading-tight font-semibold tracking-tight">Resumen</h1>
+        <h1 className="page-title">Resumen</h1>
         <p className="mt-1 text-ink-2">
           Semana del {format(parseDay(stats.weekly[stats.weekly.length - 1].week_start), "d 'de' MMMM", { locale: es })}
         </p>
@@ -39,12 +46,24 @@ export function DashboardPage() {
 
       <div className="mt-5 grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
         <Kpi label="Abiertos" value={stats.open} icon={<Inbox />} tone="text-ink" bg="bg-paper-2" />
+        <Kpi label="Por asignar" value={stats.unassigned} icon={<UserRoundPlus />} tone={stats.unassigned ? 'text-clay' : 'text-ink-2'} bg="bg-paper-2" href="#por-asignar" />
         <Kpi label="Vencidos" value={stats.overdue} icon={<AlertTriangle />} tone="text-clay" bg="bg-clay-soft" />
         <Kpi label="En espera" value={stats.waiting} sub={stats.follow_ups ? `${stats.follow_ups} por revisar hoy` : undefined} icon={<Hourglass />} tone="text-amber" bg="bg-amber-soft" />
         <Kpi label={`Quietos ${STALE_DAYS}+ días`} value={stats.stale} icon={<Moon />} tone="text-ink-2" bg="bg-paper-2" />
         <Kpi label="Terminados esta semana" value={stats.done_week} icon={<CheckCircle2 />} tone="text-moss" bg="bg-moss-soft" />
-        <Kpi label="Nuevos esta semana" value={stats.created_week} icon={<Sparkles />} tone="text-pine" bg="bg-pine-soft" />
       </div>
+
+      {unassigned.length > 0 && (
+        <section id="por-asignar" className="mt-5 scroll-mt-24">
+          <Card title="Por asignar" subtitle="Nadie se ha hecho cargo de estos. Elige quién los hace.">
+            <div className="space-y-2">
+              {unassigned.map((t) => (
+                <TicketRow key={t.id} ticket={t} onOpen={ui.openTicket} extra={<AssignMenuButton ticket={t} />} />
+              ))}
+            </div>
+          </Card>
+        </section>
+      )}
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.15fr_1fr]">
         <Card title="Carga de cada persona" subtitle="Pendientes abiertos ahorita">
@@ -59,16 +78,16 @@ export function DashboardPage() {
                     <div className="flex items-baseline gap-2">
                       <span className="font-bold">{u.name}</span>
                       <span className="text-[13px] text-ink-3">
-                        {row.done_week} terminados esta semana
+                        {row.done_week} terminado{row.done_week === 1 ? '' : 's'} esta semana
                       </span>
                     </div>
                     <div className="mt-1.5 flex items-center gap-2">
                       <div className="flex h-2.5 flex-1 gap-[2px] overflow-hidden rounded-full bg-paper-3">
                         {row.overdue > 0 && (
-                          <div className="h-full rounded-l-full bg-clay" style={{ width: `${(row.overdue / maxOpen) * 100}%` }} title={`${row.overdue} vencidos`} />
+                          <div className="h-full rounded-l-full bg-clay-solid" style={{ width: `${(row.overdue / maxOpen) * 100}%` }} title={`${row.overdue} vencidos`} />
                         )}
                         <div
-                          className="h-full rounded-r-full bg-pine"
+                          className="h-full rounded-r-full bg-pine-solid"
                           style={{ width: `${((row.open - row.overdue) / maxOpen) * 100}%` }}
                           title={`${row.open - row.overdue} al corriente`}
                         />
@@ -91,10 +110,10 @@ export function DashboardPage() {
           </div>
           <div className="mt-4 flex gap-4 border-t border-line pt-3 text-[12px] font-semibold text-ink-2">
             <span className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full bg-clay" /> Vencidos
+              <span className="size-2.5 rounded-full bg-clay-solid" /> Vencidos
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full bg-pine" /> Al corriente
+              <span className="size-2.5 rounded-full bg-pine-solid" /> Al corriente
             </span>
           </div>
         </Card>
@@ -170,14 +189,15 @@ function Empty({ children }: { children: ReactNode }) {
   return <p className="rounded-xl border border-dashed border-line-2 px-4 py-6 text-center text-[14px] text-ink-3">{children}</p>;
 }
 
-function Kpi({ label, value, icon, tone, bg, sub }: { label: string; value: number; icon: ReactNode; tone: string; bg: string; sub?: string }) {
+function Kpi({ label, value, icon, tone, bg, sub, href }: { label: string; value: number; icon: ReactNode; tone: string; bg: string; sub?: string; href?: string }) {
+  const Tag = href && value ? 'a' : 'div';
   return (
-    <div className="panel p-4">
+    <Tag href={href && value ? href : undefined} className={`panel block p-4 ${href && value ? 'transition-shadow hover:shadow-lift' : ''}`}>
       <span className={`flex size-9 items-center justify-center rounded-xl ${bg} ${tone} [&>svg]:size-[18px]`}>{icon}</span>
       <p className={`mt-3 font-display text-[32px] leading-none font-semibold tabular-nums ${tone}`}>{value}</p>
       <p className="mt-1 text-[13px] font-semibold text-ink-2">{label}</p>
       {sub && <p className="text-[12px] font-bold text-amber">{sub}</p>}
-    </div>
+    </Tag>
   );
 }
 
@@ -196,7 +216,7 @@ function WeeklyChart({ weekly }: { weekly: { week_start: string; done: number; c
       title="Ritmo de trabajo"
       subtitle="Pendientes nuevos y terminados por semana (últimas 8)"
       aside={
-        <button className="btn-ghost btn-sm" onClick={() => setAsTable((t) => !t)} aria-pressed={asTable}>
+        <button className="btn-ghost btn-sm whitespace-nowrap" onClick={() => setAsTable((t) => !t)} aria-pressed={asTable}>
           {asTable ? <BarChart3 className="size-4" /> : <Table2 className="size-4" />}
           {asTable ? 'Ver gráfica' : 'Ver tabla'}
         </button>

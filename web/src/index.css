@@ -1,5 +1,19 @@
 @import 'tailwindcss';
 
+/*
+  Sistema de color de Giraboard
+  ─────────────────────────────
+  Cada color tiene UN significado en toda la app (y siempre va con ícono y texto, nunca solo):
+    pine   → marca y acciones principales (botones, selección, enlaces)
+    slate  → «Por hacer»
+    sky    → «En proceso»
+    amber  → «Esperando» y todo lo de seguimientos
+    moss   → «Listo» (terminado)
+    clay   → lo que urge: vencido, urgente, importante, borrar
+    plum   → informativo: próximos días, nuevos
+  Variantes: X (texto e íconos, ≥ 4.5:1 sobre las superficies), X-solid (relleno con texto blanco, ≥ 4.5:1)
+  y X-soft (fondo suave). Todos los pares se verificaron con la fórmula de contraste de WCAG 2.2.
+*/
 @theme {
   --font-display: 'Fraunces Variable', Georgia, serif;
   --font-sans: 'Figtree Variable', ui-sans-serif, system-ui, sans-serif;
@@ -9,33 +23,49 @@
   --color-paper-3: #e3dbcc;
   --color-card: #fffdf9;
   --color-ink: #1d2b2a;
-  --color-ink-2: #46524f;
-  --color-ink-3: #5e6865;
+  --color-ink-2: #45514e;
+  --color-ink-3: #5b6562;
   --color-line: #e0d7c8;
   --color-line-2: #d2c7b5;
+  /* Borde de campos de texto: 3.3:1 sobre la tarjeta (WCAG 1.4.11) */
+  --color-field: #968a77;
+  --color-scrim: #0f1716;
 
   --color-pine: #1e5b4f;
-  --color-pine-dark: #15443a;
+  --color-pine-solid: #1e5b4f;
+  --color-pine-hover: #15443a;
   --color-pine-soft: #dcebe4;
 
-  --color-clay: #a23e27;
-  --color-clay-soft: #f7e0d8;
-  --color-amber: #8c5a05;
+  --color-clay: #a3391f;
+  --color-clay-solid: #a3391f;
+  --color-clay-soft: #f8e1d9;
+  --color-amber: #83520a;
+  --color-amber-solid: #8f5c0a;
   --color-amber-soft: #f6e8c8;
-  --color-sky: #2f6496;
+  --color-sky: #2b5f92;
+  --color-sky-solid: #2f6496;
   --color-sky-soft: #dde8f3;
-  --color-moss: #256c4b;
-  --color-moss-soft: #dcefe3;
-  --color-slate: #5b6670;
+  --color-moss: #2d6b2f;
+  --color-moss-solid: #317434;
+  --color-moss-soft: #dfeedb;
+  --color-slate: #56616b;
+  --color-slate-solid: #5b6670;
   --color-slate-soft: #e6e8e8;
+  --color-plum: #6d4791;
+  --color-plum-solid: #6d4791;
+  --color-plum-soft: #ece3f4;
 
-  --shadow-card: 0 1px 0 rgba(29, 43, 42, 0.04), 0 1px 3px rgba(29, 43, 42, 0.08);
-  --shadow-lift: 0 2px 4px rgba(29, 43, 42, 0.06), 0 12px 28px -6px rgba(29, 43, 42, 0.22);
-  --shadow-panel: -12px 0 40px -12px rgba(29, 43, 42, 0.25);
+  --color-chart-done: #317434;
+  --color-chart-new: #8a6bbd;
+
+  --shadow-card: 0 1px 0 rgb(29 43 42 / 0.04), 0 1px 3px rgb(29 43 42 / 0.08);
+  --shadow-lift: 0 2px 4px rgb(29 43 42 / 0.06), 0 12px 28px -6px rgb(29 43 42 / 0.22);
+  --shadow-panel: -12px 0 40px -12px rgb(29 43 42 / 0.25);
 
   --animate-rise: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   --animate-fade: fade 0.2s ease-out both;
   --animate-slide-in: slide-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-sheet: sheet 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   --animate-pop: pop 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 
   @keyframes rise {
@@ -50,28 +80,93 @@
     from { transform: translateX(32px); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
   }
+  @keyframes sheet {
+    from { transform: translateY(40px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
   @keyframes pop {
     from { transform: scale(0.97) translateY(6px); opacity: 0; }
     to { transform: scale(1) translateY(0); opacity: 1; }
   }
 }
 
+/* Solo en equipos con mouse (en celular no existe «pasar el cursor encima»). */
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+/* Pantallas táctiles: dedos, no cursor. */
+@custom-variant touch (@media (pointer: coarse));
+
 @layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  /* Modo oscuro cálido: superficies café muy oscuro, texto crema; las tarjetas suben de tono en vez de usar sombra. */
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --color-paper: #161412;
+    --color-paper-2: #1d1a17;
+    --color-paper-3: #2c2823;
+    --color-card: #221f1b;
+    --color-ink: #efe8dc;
+    --color-ink-2: #cdc4b5;
+    --color-ink-3: #a89e8f;
+    --color-line: #332e28;
+    --color-line-2: #4a4239;
+    --color-field: #776d61;
+    --color-scrim: #000000;
+
+    --color-pine: #7fc8b2;
+    --color-pine-solid: #2a7563;
+    --color-pine-hover: #318a74;
+    --color-pine-soft: #1c332d;
+    --color-clay: #f39479;
+    --color-clay-solid: #b2432a;
+    --color-clay-soft: #3b211a;
+    --color-amber: #e6b95e;
+    --color-amber-solid: #8f5c0a;
+    --color-amber-soft: #372a13;
+    --color-sky: #93bdea;
+    --color-sky-solid: #2f6496;
+    --color-sky-soft: #1a2938;
+    --color-moss: #8fcf8a;
+    --color-moss-solid: #317434;
+    --color-moss-soft: #1d311d;
+    --color-slate: #aab4bd;
+    --color-slate-solid: #56616b;
+    --color-slate-soft: #272b2e;
+    --color-plum: #c9aee6;
+    --color-plum-solid: #6d4791;
+    --color-plum-soft: #2b2236;
+
+    --color-chart-done: #6cbf7a;
+    --color-chart-new: #b39ad8;
+
+    --shadow-card: 0 1px 0 rgb(0 0 0 / 0.25), 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.3), 0 14px 30px -8px rgb(0 0 0 / 0.6);
+    --shadow-panel: -12px 0 40px -12px rgb(0 0 0 / 0.7);
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
     font-size: 16px;
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-paper text-ink font-sans antialiased;
     font-feature-settings: 'ss01';
-    /* Textura de papel muy sutil */
+    /* Textura de papel muy sutil (solo en modo claro) */
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.3 0 0 0 0 0.2 0 0 0 .045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  :root[data-theme='dark'] body {
+    background-image: none;
   }
   ::selection {
     background: var(--color-pine-soft);
   }
   button,
-  [role='button'] {
+  [role='button'],
+  label[for],
+  summary {
     cursor: pointer;
   }
   button:disabled {
@@ -82,20 +177,32 @@
     outline-offset: 2px;
     border-radius: 6px;
   }
+  /* Nunca menos de 16 px en campos: así el iPhone no hace zoom al tocarlos. */
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
   input[type='date']::-webkit-calendar-picker-indicator {
     cursor: pointer;
     opacity: 0.6;
   }
+  :root[data-theme='dark'] input[type='date']::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
+  [hidden] {
+    display: none !important;
+  }
 }
 
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 min-h-10 text-[15px] font-semibold transition-all duration-150 select-none disabled:opacity-50 active:scale-[0.98];
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 min-h-11 text-[15px] font-semibold transition-all duration-150 select-none disabled:opacity-50 active:scale-[0.98];
 }
 @utility btn-primary {
-  @apply btn bg-pine text-white shadow-[0_1px_0_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,0.12)] hover:bg-pine-dark;
+  @apply btn bg-pine-solid text-white shadow-[0_1px_0_rgb(0_0_0/0.1),inset_0_1px_0_rgb(255_255_255/0.12)] hover:bg-pine-hover;
 }
 @utility btn-secondary {
-  @apply btn bg-card text-ink border border-line-2 hover:bg-paper-2 hover:border-ink-3/40;
+  @apply btn bg-card text-ink border border-line-2 hover:bg-paper-2 hover:border-field;
 }
 @utility btn-ghost {
   @apply btn text-ink-2 hover:bg-paper-2 hover:text-ink;
@@ -103,29 +210,44 @@
 @utility btn-danger {
   @apply btn text-clay hover:bg-clay-soft;
 }
+@utility btn-danger-solid {
+  @apply btn bg-clay-solid text-white hover:brightness-110;
+}
 @utility btn-sm {
-  @apply min-h-8 px-3 text-sm rounded-lg;
+  @apply min-h-9 px-3 text-sm rounded-lg;
+  @media (pointer: coarse) {
+    min-height: 2.75rem;
+  }
+}
+@utility btn-icon {
+  @apply btn px-0 size-11 shrink-0;
 }
 @utility input {
-  @apply w-full rounded-xl border border-line-2 bg-card px-3.5 min-h-11 text-[15px] text-ink placeholder:text-ink-3 transition-colors hover:border-ink-3/50 focus:border-pine focus:outline-none focus:ring-3 focus:ring-pine/15;
+  @apply w-full rounded-xl border border-field bg-card px-3.5 min-h-12 text-[16px] text-ink placeholder:text-ink-3 transition-colors hover:border-ink-3 focus:border-pine focus:outline-none focus:ring-3 focus:ring-pine/20;
 }
 @utility label {
   @apply mb-1.5 block text-[13px] font-bold uppercase tracking-[0.06em] text-ink-3;
 }
 @utility chip {
-  @apply inline-flex items-center gap-1.5 rounded-full border px-3 min-h-9 text-sm font-semibold transition-all duration-150 active:scale-[0.97];
+  @apply inline-flex items-center gap-1.5 rounded-full border px-3 min-h-10 text-[15px] font-semibold transition-all duration-150 active:scale-[0.97];
+  @media (pointer: coarse) {
+    min-height: 2.75rem;
+  }
 }
 @utility chip-off {
-  @apply chip border-line-2 bg-card text-ink-2 hover:border-ink-3/50 hover:text-ink;
+  @apply chip border-line-2 bg-card text-ink-2 hover:border-field hover:text-ink;
 }
 @utility chip-on {
-  @apply chip border-pine bg-pine text-white;
+  @apply chip border-pine-solid bg-pine-solid text-white;
 }
 @utility panel {
   @apply rounded-2xl border border-line bg-card shadow-card;
 }
 @utility eyebrow {
   @apply text-[12px] font-bold uppercase tracking-[0.12em] text-ink-3;
+}
+@utility page-title {
+  @apply font-display text-[30px] leading-tight font-semibold tracking-tight sm:text-[34px];
 }
 
 textarea.input {
@@ -138,11 +260,21 @@ textarea.input {
   scrollbar-color: var(--color-line-2) transparent;
 }
 
+/* Filas que se pueden deslizar de lado sin barra visible (pestañas, filtros) */
+.scroll-row {
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.scroll-row::-webkit-scrollbar {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

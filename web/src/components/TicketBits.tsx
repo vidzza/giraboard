@@ -1,13 +1,14 @@
-import { CalendarClock, Flame, Hourglass, Repeat } from 'lucide-react';
+import { ArrowUp, CalendarClock, Flame, Hourglass, Repeat } from 'lucide-react';
 import type { Category, Ticket } from '../../../shared/types.ts';
 import { STATUS_LABEL } from '../../../shared/types.ts';
 import { dueTone, formatDue } from '../lib/dates.ts';
 import { STATUS_STYLE } from '../lib/status.ts';
 
+// Fechas: entre más cerca, más intenso (rojo = ya pasó o es hoy). El ámbar se reserva para «Esperando».
 const DUE_TONE = {
-  overdue: 'bg-clay text-white',
+  overdue: 'bg-clay-solid text-white',
   today: 'bg-clay-soft text-clay',
-  soon: 'bg-amber-soft text-amber',
+  soon: 'bg-paper-3 text-ink',
   later: 'bg-paper-2 text-ink-2',
   none: 'bg-paper-2 text-ink-3',
 };
@@ -53,11 +54,13 @@ export function CategoryTag({ category }: { category: Category | undefined | nul
 export function PriorityFlag({ priority }: { priority: Ticket['priority'] }) {
   if (priority === 'normal') return null;
   return priority === 'urgent' ? (
-    <span className="inline-flex items-center gap-0.5 rounded-md bg-clay-soft px-1.5 py-0.5 text-[12px] font-bold text-clay">
+    <span className="inline-flex items-center gap-0.5 rounded-md bg-clay-solid px-1.5 py-0.5 text-[12px] font-bold text-white">
       <Flame className="size-3.5" /> Urgente
     </span>
   ) : (
-    <span className="inline-flex items-center rounded-md bg-amber-soft px-1.5 py-0.5 text-[12px] font-bold text-amber">Importante</span>
+    <span className="inline-flex items-center gap-0.5 rounded-md border border-clay/40 px-1.5 py-px text-[12px] font-bold text-clay">
+      <ArrowUp className="size-3.5" strokeWidth={2.6} /> Importante
+    </span>
   );
 }
 
@@ -93,7 +96,7 @@ export function ProgressBar({ done, total, className = '' }: { done: number; tot
     <div className={`flex items-center gap-2 ${className}`} title={`${done} de ${total} pasos hechos`}>
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-paper-3">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? 'bg-moss' : 'bg-pine'}`}
+          className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? 'bg-moss-solid' : 'bg-pine-solid'}`}
           style={{ width: `${pct}%` }}
         />
       </div>

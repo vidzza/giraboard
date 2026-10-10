@@ -28,7 +28,7 @@ export function ClientsPage() {
       <header className="flex flex-wrap items-end gap-3">
         <div className="mr-auto">
           <p className="eyebrow">Todo lo que se ha hecho por cada cliente</p>
-          <h1 className="font-display text-[32px] leading-tight font-semibold tracking-tight">Clientes</h1>
+          <h1 className="page-title">Clientes</h1>
         </div>
         <button className="btn-primary" onClick={() => setCreating(true)}>
           <Plus className="size-4" /> Nuevo cliente
@@ -37,7 +37,7 @@ export function ClientsPage() {
 
       <div className="relative mt-5">
         <Search className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-ink-3" />
-        <input className="input min-h-12 pl-11 text-[16px]" placeholder="Buscar por nombre, teléfono o correo…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="input min-h-12 pl-11 text-[16px]" placeholder="Buscar por nombre, teléfono o correo…" aria-label="Buscar clientes" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
 
       <div className="panel mt-4 overflow-hidden">

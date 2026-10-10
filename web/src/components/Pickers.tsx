@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, Flame, Plus, Search, UserRound, X } from 'lucide-react';
+import { ArrowUp, CalendarDays, Check, Flame, Plus, Search, UserRoundPlus, X } from 'lucide-react';
 import { STATUSES, STATUS_LABEL, PRIORITIES, PRIORITY_LABEL, type Priority, type Status } from '../../../shared/types.ts';
 import { useCategories, useClients, useUsers } from '../lib/queries.ts';
 import { quickDates, formatDue } from '../lib/dates.ts';
@@ -36,24 +36,26 @@ export function StatusPicker({ value, onChange }: { value: Status; onChange: (s:
 
 export function PriorityPicker({ value, onChange }: { value: Priority; onChange: (p: Priority) => void }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Prioridad">
       {PRIORITIES.map((p) => {
         const active = value === p;
+        // Prioridad = escala de urgencia: misma familia de color (rojo) con más o menos intensidad.
         const tone =
           p === 'urgent'
             ? active
-              ? 'bg-clay border-clay text-white'
+              ? 'bg-clay-solid border-clay-solid text-white'
               : 'border-line-2 bg-card text-clay hover:bg-clay-soft'
             : p === 'high'
               ? active
-                ? 'bg-amber border-amber text-white'
-                : 'border-line-2 bg-card text-amber hover:bg-amber-soft'
+                ? 'bg-clay-soft border-clay text-clay'
+                : 'border-line-2 bg-card text-clay hover:bg-clay-soft'
               : active
-                ? 'bg-ink border-ink text-white'
+                ? 'bg-ink border-ink text-paper'
                 : 'border-line-2 bg-card text-ink-2 hover:bg-paper-2';
         return (
-          <button key={p} type="button" onClick={() => onChange(p)} className={`chip ${tone}`}>
+          <button key={p} type="button" role="radio" aria-checked={active} onClick={() => onChange(p)} className={`chip ${tone}`}>
             {p === 'urgent' && <Flame className="size-4" />}
+            {p === 'high' && <ArrowUp className="size-4" strokeWidth={2.6} />}
             {PRIORITY_LABEL[p]}
           </button>
         );
@@ -107,40 +109,75 @@ export function DueDatePicker({
   );
 }
 
-export function PersonPicker({
+/**
+ * Elegir una o varias personas. Para «responsables», no elegir a nadie = «Por asignar».
+ * Si `onlySelf`, la persona solo puede ponerse o quitarse a sí misma (ajuste del negocio).
+ */
+export function PeoplePicker({
   value,
   onChange,
-  allowNone = true,
+  mode = 'assignees',
+  exclude = [],
+  onlySelf = false,
+  meId,
 }: {
-  value: number | null;
-  onChange: (id: number | null) => void;
-  allowNone?: boolean;
+  value: number[];
+  onChange: (ids: number[]) => void;
+  mode?: 'assignees' | 'followers';
+  exclude?: number[];
+  onlySelf?: boolean;
+  meId: number;
 }) {
   const { data: users = [] } = useUsers();
+  const people = users
+    .filter((u) => (u.active || value.includes(u.id)) && !exclude.includes(u.id))
+    .sort((a, b) => (a.id === meId ? -1 : b.id === meId ? 1 : 0));
+  const toggle = (id: number) => onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  const none = value.length === 0;
   return (
-    <div className="flex flex-wrap gap-2">
-      {users
-        .filter((u) => u.active || u.id === value)
-        .map((u) => (
+    <div>
+      <div className="flex flex-wrap gap-2" role="group" aria-label={mode === 'assignees' ? 'Responsables' : 'En copia'}>
+        {people.map((u) => {
+          const on = value.includes(u.id);
+          const locked = onlySelf && u.id !== meId;
+          if (locked && !on) return null;
+          return (
+            <button
+              key={u.id}
+              type="button"
+              aria-pressed={on}
+              disabled={locked}
+              title={locked ? 'Solo coordinación puede quitar a otras personas' : undefined}
+              onClick={() => toggle(u.id)}
+              className={`chip pl-1 ${on ? 'border-pine-solid bg-pine-solid text-white' : 'border-line-2 bg-card text-ink-2 hover:border-field hover:text-ink'} disabled:opacity-80`}
+            >
+              <Avatar user={u} size="xs" className={on ? 'ring-2 ring-white/70' : ''} />
+              {u.id === meId ? `Yo (${u.name.split(' ')[0]})` : u.name}
+              {on && <Check className="size-4" strokeWidth={3} />}
+            </button>
+          );
+        })}
+        {mode === 'assignees' && (
           <button
-            key={u.id}
             type="button"
-            onClick={() => onChange(u.id)}
-            className={`chip pl-1 ${value === u.id ? 'border-ink bg-ink text-white' : 'border-line-2 bg-card text-ink-2 hover:border-ink-3/50'}`}
+            aria-pressed={none}
+            onClick={() => onChange([])}
+            className={`chip ${none ? 'border-ink bg-ink text-paper' : 'border-dashed border-field bg-card text-ink-2 hover:text-ink'}`}
           >
-            <Avatar user={u} size="xs" />
-            {u.name}
-            {value === u.id && <Check className="size-4" />}
+            <UserRoundPlus className="size-4" /> Por asignar
           </button>
-        ))}
-      {allowNone && (
-        <button
-          type="button"
-          onClick={() => onChange(null)}
-          className={`chip ${value === null ? 'border-ink bg-ink text-white' : 'border-dashed border-line-2 bg-card text-ink-3 hover:text-ink'}`}
-        >
-          <UserRound className="size-4" /> Nadie aún
-        </button>
+        )}
+      </div>
+      {mode === 'assignees' && (
+        <p className="mt-1.5 text-[13px] text-ink-3">
+          {none
+            ? 'Quedará en la bandeja «Por asignar»: admin y coordinación lo verán para repartirlo.'
+            : onlySelf
+              ? 'Para dárselo a alguien más, déjalo «Por asignar» y coordinación lo reparte.'
+              : value.length > 1
+                ? 'Les aparecerá a todos en «Mi día». Cualquiera lo puede marcar como listo.'
+                : 'Puedes elegir a varias personas.'}
+        </p>
       )}
     </div>
   );
@@ -221,7 +258,7 @@ export function ClientPicker({
 
   if (value.name && !changing) {
     return (
-      <div className="flex min-h-11 items-center gap-1 rounded-xl border border-line-2 bg-card pr-1 pl-3.5">
+      <div className="flex min-h-12 items-center gap-1 rounded-xl border border-field bg-card pr-1 pl-3.5">
         <span className="flex-1 truncate text-[15px] font-semibold">
           {value.name}
           {value.isNew && <span className="ml-2 text-xs font-bold text-pine">(cliente nuevo)</span>}
@@ -229,7 +266,7 @@ export function ClientPicker({
         <button type="button" className="btn-ghost btn-sm" onClick={() => setChanging(true)}>
           Cambiar
         </button>
-        <button type="button" className="btn-ghost btn-sm text-ink-3" onClick={() => onChange({ id: null, name: null })} aria-label="Quitar cliente">
+        <button type="button" className="btn-ghost btn-sm px-2 text-ink-3" onClick={() => onChange({ id: null, name: null })} aria-label="Quitar cliente">
           <X className="size-4" />
         </button>
       </div>
@@ -267,14 +304,16 @@ export function ClientPicker({
         }}
       />
       {open && options.length > 0 && (
-        <div className="mt-1.5 animate-fade overflow-hidden rounded-xl border border-line bg-card shadow-lift">
+        <div className="mt-1.5 animate-fade overflow-hidden rounded-xl border border-line bg-card shadow-lift" role="listbox">
           {options.map((o, i) => (
             <button
               key={o.id ?? `new-${o.name}`}
               type="button"
               onMouseEnter={() => setHighlight(i)}
               onClick={() => choose(o)}
-              className={`flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-[15px] ${i === highlight ? 'bg-paper-2' : ''}`}
+              role="option"
+              aria-selected={i === highlight}
+              className={`flex min-h-11 w-full items-center gap-2 px-3.5 py-2.5 text-left text-[15px] ${i === highlight ? 'bg-paper-2' : ''}`}
             >
               {o.isNew ? (
                 <>

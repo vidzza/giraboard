@@ -35,7 +35,7 @@ export function ArchivePage() {
     <div className="mx-auto max-w-4xl">
       <header>
         <p className="eyebrow">Todo lo que ya se terminó o se archivó</p>
-        <h1 className="font-display text-[32px] leading-tight font-semibold tracking-tight">Archivo</h1>
+        <h1 className="page-title">Archivo</h1>
         <p className="mt-1 text-ink-2">Nada se borra: aquí puedes consultar cualquier pendiente pasado y su bitácora completa.</p>
       </header>
       <div className="relative mt-5">

@@ -1,25 +1,30 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import { MessageSquareText, Paperclip, Moon, UserRound } from 'lucide-react';
 import { STALE_DAYS, type Ticket } from '../../../shared/types.ts';
-import { useCategoryMap, useUserMap } from '../lib/queries.ts';
+import { useCategoryMap } from '../lib/queries.ts';
 import { daysSince } from '../lib/dates.ts';
-import { Avatar } from './Avatar.tsx';
+import { AvatarStack } from './Avatar.tsx';
 import { CategoryTag, DueChip, PriorityFlag, ProgressBar, RecurrenceIcon, StatusPill, WaitingNote } from './TicketBits.tsx';
 
+/** Tarjeta del tablero. */
 export const TicketCard = memo(function TicketCard({
   ticket,
   onOpen,
   overlay = false,
   hideAssignee = false,
   showStatus = false,
+  actions,
+  actionsLayout = 'row',
 }: {
   ticket: Ticket;
   onOpen?: (id: number) => void;
   overlay?: boolean;
   hideAssignee?: boolean;
   showStatus?: boolean;
+  /** Botones extra (p. ej. «Mover»). En celular van en una fila al pie; en computadora, junto a la fecha. */
+  actions?: ReactNode;
+  actionsLayout?: 'row' | 'inline';
 }) {
-  const users = useUserMap();
   const categories = useCategoryMap();
   const category = ticket.category_id ? categories.get(ticket.category_id) : null;
   const done = ticket.status === 'done';
@@ -28,27 +33,23 @@ export const TicketCard = memo(function TicketCard({
   return (
     <article
       onClick={() => onOpen?.(ticket.id)}
-      className={`group relative cursor-pointer overflow-hidden rounded-xl border bg-card pl-4 pr-3 py-3 transition-[box-shadow,transform,border-color] duration-150 ${
+      className={`group relative cursor-pointer rounded-xl border py-3 pr-3 pl-4 transition-[box-shadow,transform,border-color] duration-150 ${
         overlay
-          ? 'rotate-[1.5deg] border-pine/40 shadow-lift'
-          : 'border-line shadow-card hover:-translate-y-px hover:border-line-2 hover:shadow-lift'
-      } ${idle ? 'bg-[#fbf6e9]' : ''} ${done ? 'opacity-75' : ''}`}
+          ? 'rotate-[1.5deg] border-pine/40 bg-card shadow-lift'
+          : 'border-line shadow-card can-hover:hover:-translate-y-px hover:border-line-2 hover:shadow-lift'
+      } ${idle ? 'bg-amber-soft/45' : 'bg-card'} ${done ? 'opacity-80' : ''}`}
     >
-      <span
-        className="absolute inset-y-0 left-0 w-[5px]"
-        style={{ backgroundColor: category?.color ?? 'var(--color-line-2)' }}
-        aria-hidden
-      />
-      <div className="mb-1 flex items-center gap-2">
+      <span className="absolute inset-y-0 -left-px w-[5px] rounded-l-xl" style={{ backgroundColor: category?.color ?? 'var(--color-line-2)' }} aria-hidden />
+      <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-[12px] font-bold text-ink-3 tabular-nums">#{ticket.id}</span>
         <CategoryTag category={category} />
-        <span className="ml-auto flex items-center gap-1">
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
           {showStatus && <StatusPill status={ticket.status} />}
           <RecurrenceIcon ticket={ticket} />
           <PriorityFlag priority={ticket.priority} />
         </span>
       </div>
-      <h3 className={`text-[15px] leading-snug font-semibold text-ink line-clamp-3 ${done ? 'line-through decoration-ink-3/50' : ''}`}>
+      <h3 className={`line-clamp-3 text-[15px] leading-snug font-semibold break-words text-ink ${done ? 'line-through decoration-ink-3/50' : ''}`}>
         {ticket.title}
       </h3>
       {ticket.client_name && (
@@ -63,10 +64,10 @@ export const TicketCard = memo(function TicketCard({
         </div>
       )}
       <ProgressBar done={ticket.checklist_done} total={ticket.checklist_total} className="mt-2.5" />
-      <div className="mt-2.5 flex items-center gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
         <DueChip date={ticket.due_date} done={done} />
         {ticket.comment_count > 0 && (
-          <span className="inline-flex items-center gap-0.5 text-[12px] font-semibold text-ink-3" title="Comentarios">
+          <span className="inline-flex items-center gap-0.5 text-[12px] font-semibold text-ink-3" title="Notas">
             <MessageSquareText className="size-3.5" /> {ticket.comment_count}
           </span>
         )}
@@ -80,10 +81,23 @@ export const TicketCard = memo(function TicketCard({
             <Moon className="size-3.5" /> {idle} días quieto
           </span>
         )}
-        {!hideAssignee && (
-          <Avatar user={ticket.assignee_id ? users.get(ticket.assignee_id) : null} size="sm" className="ml-auto" />
-        )}
+        <span className="ml-auto flex items-center gap-1">
+          {actions && actionsLayout === 'inline' && (
+            <span
+              className="flex items-center can-hover:opacity-0 can-hover:group-hover:opacity-100 can-hover:group-focus-within:opacity-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {actions}
+            </span>
+          )}
+          {!hideAssignee && <AvatarStack ids={ticket.assignee_ids} size="sm" />}
+        </span>
       </div>
+      {actions && actionsLayout === 'row' && (
+        <div className="-mx-1.5 mt-2 flex items-center justify-end gap-1 border-t border-line pt-1.5" onClick={(e) => e.stopPropagation()}>
+          {actions}
+        </div>
+      )}
     </article>
   );
 });

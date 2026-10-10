@@ -10,7 +10,7 @@ export const MIN_PASSWORD = 8;
 function AuthShell({ children, businessName }: { children: ReactNode; businessName?: string }) {
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1.05fr_1fr]">
-      <aside className="relative hidden overflow-hidden bg-pine p-12 text-white lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:self-start">
+      <aside className="relative hidden overflow-hidden bg-pine-solid p-12 text-white lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col lg:self-start">
         <div className="relative z-10 flex items-center gap-3">
           <img src="/favicon.svg" alt="" className="size-11 rounded-xl ring-1 ring-white/20" />
           <span>

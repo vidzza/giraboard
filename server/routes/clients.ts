@@ -4,30 +4,40 @@ import { all, get, run } from '../db.ts';
 import { type AppEnv, requireAdmin } from '../auth.ts';
 import { fail, idParam, optionalText, readJson } from '../http.ts';
 import { broadcastChange } from '../events.ts';
-import type { Client } from '../../shared/types.ts';
+import type { Client, User } from '../../shared/types.ts';
+import { visibleClause } from '../permissions.ts';
 
 export const clientRoutes = new Hono<AppEnv>();
 
-const CLIENT_SELECT = `
+/** Clientes con conteos de sus pendientes (solo los que esta persona puede ver). */
+function clientSelect(user: User) {
+  const vis = visibleClause(user);
+  return {
+    sql: `
   SELECT c.*,
-    (SELECT COUNT(*) FROM tickets t WHERE t.client_id = c.id AND t.status != 'done' AND t.archived_at IS NULL) AS open_count,
-    (SELECT COUNT(*) FROM tickets t WHERE t.client_id = c.id) AS total_count,
-    (SELECT MAX(t.last_activity_at) FROM tickets t WHERE t.client_id = c.id) AS last_activity_at
-  FROM clients c`;
+    (SELECT COUNT(*) FROM tickets t WHERE t.client_id = c.id AND t.status != 'done' AND t.archived_at IS NULL AND ${vis.sql}) AS open_count,
+    (SELECT COUNT(*) FROM tickets t WHERE t.client_id = c.id AND ${vis.sql}) AS total_count,
+    (SELECT MAX(t.last_activity_at) FROM tickets t WHERE t.client_id = c.id AND ${vis.sql}) AS last_activity_at
+  FROM clients c`,
+    params: [...vis.params, ...vis.params, ...vis.params],
+  };
+}
 
 clientRoutes.get('/', (c) => {
+  const sel = clientSelect(c.get('user'));
   const q = (c.req.query('q') ?? '').trim();
   if (q) {
     const like = `%${q}%`;
     return c.json(
-      all<Client>(`${CLIENT_SELECT} WHERE c.name LIKE ? OR c.phone LIKE ? OR c.email LIKE ? ORDER BY c.name LIMIT 50`, like, like, like),
+      all<Client>(`${sel.sql} WHERE c.name LIKE ? OR c.phone LIKE ? OR c.email LIKE ? ORDER BY c.name LIMIT 50`, ...sel.params, like, like, like),
     );
   }
-  return c.json(all<Client>(`${CLIENT_SELECT} ORDER BY c.name`));
+  return c.json(all<Client>(`${sel.sql} ORDER BY c.name`, ...sel.params));
 });
 
 clientRoutes.get('/:id', (c) => {
-  const client = get<Client>(`${CLIENT_SELECT} WHERE c.id = ?`, idParam(c));
+  const sel = clientSelect(c.get('user'));
+  const client = get<Client>(`${sel.sql} WHERE c.id = ?`, ...sel.params, idParam(c));
   if (!client) fail(404, 'Ese cliente no existe');
   return c.json(client);
 });
@@ -53,7 +63,8 @@ clientRoutes.post('/', async (c) => {
     c.get('user').id,
   );
   broadcastChange('clients');
-  return c.json(get<Client>(`${CLIENT_SELECT} WHERE c.id = ?`, res.lastInsertRowid));
+  const sel = clientSelect(c.get('user'));
+  return c.json(get<Client>(`${sel.sql} WHERE c.id = ?`, ...sel.params, res.lastInsertRowid));
 });
 
 clientRoutes.patch('/:id', async (c) => {
@@ -67,7 +78,8 @@ clientRoutes.patch('/:id', async (c) => {
     if (body[key] !== undefined) run(`UPDATE clients SET ${key} = ? WHERE id = ?`, body[key], id);
   }
   broadcastChange('clients');
-  return c.json(get<Client>(`${CLIENT_SELECT} WHERE c.id = ?`, id));
+  const sel = clientSelect(c.get('user'));
+  return c.json(get<Client>(`${sel.sql} WHERE c.id = ?`, ...sel.params, id));
 });
 
 clientRoutes.delete('/:id', requireAdmin, (c) => {

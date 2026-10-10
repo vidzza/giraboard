@@ -2,7 +2,7 @@
 
 *[Leer en español](DESPLIEGUE.md)*
 
-Giraboard runs as a **systemd service**: it starts when the machine boots and restarts if anything fails. The database is a single SQLite file, so there's nothing else to install. HTTPS for your domain is handled by **Caddy**, which obtains and renews certificates automatically.
+Giraboard runs as a **systemd service**: it **starts by itself when the machine boots** (no login needed) and restarts within 3 seconds if anything fails. You don't need to keep a terminal open. The database is a single SQLite file, so there's nothing else to install. HTTPS for your domain is handled by **Caddy**, which obtains and renews certificates automatically.
 
 The examples below use `tasks.your-domain.com`. Replace it with your real subdomain.
 
@@ -63,7 +63,28 @@ This works even without a fixed IP. It requires your domain's DNS to be managed 
 cd ~/giraboard && sudo ./deploy/install.sh --red-local
 ```
 
-Open `http://SERVER_IP:3000` from any computer on the same network.
+Open `http://SERVER_IP:3000` or `http://raspberrypi.local:3000` from any computer or phone on the same network (the installer prints both).
+
+If you were trying it with `npm run probar` in a terminal, stop that first with **Ctrl+C**; the service replaces it. To keep what you entered while testing, add `--importar-datos ~/giraboard/data` the first time (it only imports into an empty board).
+
+## Several boards on one machine
+
+One Raspberry Pi can host several **independent** boards, each with its own accounts, tasks and backups, on its own port (e.g. two businesses or two branches).
+
+```bash
+cd ~/giraboard && sudo ./deploy/install.sh --red-local --nombre ventas --puerto 3001
+```
+
+- `--nombre` (name): lowercase letters, digits and dashes. The first board you install is called **principal**.
+- `--puerto` (port): optional; if omitted the next free port is used (3001, 3002…). The installer refuses ports used by another board or program.
+- Works with a domain or tunnel too: `sudo ./deploy/install.sh sales.your-domain.com --nombre ventas`.
+- All boards share the same code, so updating updates and restarts all of them.
+
+| To | Command |
+|---|---|
+| List boards, their port and status | `sudo ./deploy/install.sh --lista` or `sudo giraboard tableros` |
+| Run the commands below on another board | add `-t NAME`, e.g. `sudo giraboard -t ventas usuarios` |
+| Remove a board (its data is kept) | `sudo ./deploy/install.sh --quitar ventas` |
 
 ## Step 3 · First run
 
@@ -75,14 +96,22 @@ The setup code prevents anyone on the internet from claiming the admin account o
 
 ## Accounts
 
-- **Admin** can:
-  - add people and give them a new password if they forget theirs
-  - remove access
-  - edit task types and the time zone
-  - delete tasks and download data
+There are three roles, enforced by the server on every request (not just hidden in the UI).
 
-  There can be several admins, but at least one must remain.
-- **Team** members see and work on every task, and can only change their own profile and password.
+| | Admin | Coordinación (manager) | Equipo (team) |
+|---|:-:|:-:|:-:|
+| See their own tasks, the ones they requested and the ones they're copied on | ✅ | ✅ | ✅ |
+| See everyone's tasks and the "Por asignar" (unassigned) inbox | ✅ | ✅ | — |
+| Assign tasks to other people | ✅ | ✅ | if the admin allows it |
+| See the dashboard and team activity | ✅ | ✅ | — |
+| Archive tasks | ✅ | ✅ | the ones they created |
+| Delete tasks | ✅ | — | — |
+| Manage people, roles, settings and backups | ✅ | — | — |
+
+- A task can have **several assignees** (it shows up for all of them and any of them can complete it) and **followers** who see it and get notifications.
+- Tasks created **without an assignee** go to the **"Por asignar"** inbox, visible only to admins, managers and whoever created them; leads are notified.
+- Anyone can delete their own note or file within 15 minutes; after that only an admin can.
+- There can be several admins, but at least one must remain.
 - **Forgotten password**: an admin goes to *Team → Edit → "Darle una contraseña nueva"*. The person's sessions are closed and they choose a new password on next login.
 - **Someone leaves**: uncheck *"Tiene acceso"*. Giraboard asks who should take over their open tasks; their history is preserved.
 - **The only admin is locked out**: from the server's terminal (replace `ana` with the username):
@@ -96,6 +125,7 @@ The setup code prevents anyone on the internet from claiming the admin account o
 
 | Command | What it does |
 |---|---|
+| `sudo giraboard tableros` | List installed boards, their port and status |
 | `sudo giraboard usuarios` | List people, whether they have access and their last login |
 | `sudo giraboard restablecer <user>` | Set a temporary password |
 | `sudo giraboard crear-admin <user> "Name"` | Create another admin |
@@ -105,17 +135,21 @@ The setup code prevents anyone on the internet from claiming the admin account o
 | `giraboard logs` | Follow the app logs (Ctrl+C to exit) |
 | `giraboard estado` / `sudo giraboard reiniciar` | Service status / restart |
 
+With several boards, add `-t NAME` right after `giraboard` (e.g. `giraboard -t ventas logs`).
+
 ## Updating
 
-Pull the new code and run the same install command again. It backs up the database first and never touches your data.
+One command updates every board on the machine. It backs up each database first and never touches your data or settings:
 
 ```bash
-cd ~/giraboard && git pull && sudo ./deploy/install.sh tasks.your-domain.com
+cd ~/giraboard && git pull && sudo ./deploy/install.sh --actualizar
 ```
+
+(Re-running your original install command also updates.) Anyone with the app open sees "Hay una versión nueva" with a reload button.
 
 ## Backups
 
-- **Automatic**: one database backup per day in `/var/lib/giraboard/data/backups/` (the last 30 are kept).
+- **Automatic**: one database backup per day in `/var/lib/giraboard/data/backups/` (the last 30 are kept). Other boards: `/var/lib/giraboard/tableros/NAME/backups/`.
 - **From the app**: *Settings → "Descargar respaldo completo"* (full backup) and *"Descargar pendientes para Excel"* (CSV).
 - **Off-site** (recommended weekly). This copies everything, including attachments:
   ```bash
@@ -135,9 +169,9 @@ To **restore**:
 | What | Where |
 |---|---|
 | Code | `/opt/giraboard` |
-| Data (database, files, backups) | `/var/lib/giraboard/data` |
-| Configuration | `/etc/giraboard/giraboard.env` (then `sudo giraboard reiniciar`) |
-| Service | `/etc/systemd/system/giraboard.service` |
+| Data (database, files, backups) | `/var/lib/giraboard/data` (other boards: `/var/lib/giraboard/tableros/NAME`) |
+| Configuration | `/etc/giraboard/giraboard.env` (others: `/etc/giraboard/NAME.env`), then `sudo giraboard reiniciar` |
+| Service | `giraboard.service` (others: `giraboard-NAME.service`) in `/etc/systemd/system/` |
 | HTTPS | `/etc/caddy/Caddyfile` |
 
 ## Troubleshooting

@@ -1,65 +1,38 @@
-import { Check, Clock, MessageSquareText, UserRound } from 'lucide-react';
-import { addDays, nextMonday } from 'date-fns';
-import { toast } from 'sonner';
+import type { ReactNode } from 'react';
+import { Check, Eye, MessageSquareText, Paperclip, UserRound } from 'lucide-react';
 import type { Ticket } from '../../../shared/types.ts';
-import { useCategoryMap, useUpdateTicket, useUserMap, type TicketPatch } from '../lib/queries.ts';
-import { toDateStr } from '../lib/dates.ts';
-import { Avatar } from './Avatar.tsx';
-import { CategoryTag, DueChip, PriorityFlag, ProgressBar, StatusPill, WaitingNote } from './TicketBits.tsx';
-import { Menu, MenuItem } from './Menu.tsx';
+import { useCategoryMap, useCurrentUser } from '../lib/queries.ts';
+import { AvatarStack } from './Avatar.tsx';
+import { CategoryTag, DueChip, PriorityFlag, ProgressBar, RecurrenceIcon, StatusPill, WaitingNote } from './TicketBits.tsx';
+import { PostponeMenuButton, StatusMenuButton, useCompleteTicket } from './TicketActions.tsx';
 
-function short(t: string) {
-  return t.length > 48 ? `${t.slice(0, 45)}…` : t;
-}
+// Se re-exportan para quien ya los usaba desde aquí.
+export { useCompleteTicket, usePostpone } from './TicketActions.tsx';
 
-/** Marcar como listo con opción de deshacer. */
-export function useCompleteTicket() {
-  const update = useUpdateTicket();
-  return (t: Ticket) => {
-    const prev = t.status;
-    update.mutate({ id: t.id, patch: { status: 'done' } });
-    toast.success(`¡Listo! «${short(t.title)}»`, {
-      description: t.recurrence !== 'none' ? 'Como se repite, ya quedó creado el siguiente.' : undefined,
-      duration: 8000,
-      action: { label: 'Deshacer', onClick: () => update.mutate({ id: t.id, patch: { status: prev } }) },
-    });
-  };
-}
-
-export function usePostpone() {
-  const update = useUpdateTicket();
-  return (t: Ticket, date: string, label: string) => {
-    const useFollowUp = t.status === 'waiting' && !!t.follow_up_date;
-    const patch: TicketPatch = useFollowUp ? { follow_up_date: date } : { due_date: date };
-    const before: TicketPatch = useFollowUp ? { follow_up_date: t.follow_up_date } : { due_date: t.due_date };
-    update.mutate({ id: t.id, patch });
-    toast(`Movido para ${label.toLowerCase()}`, {
-      duration: 6000,
-      action: { label: 'Deshacer', onClick: () => update.mutate({ id: t.id, patch: before }) },
-    });
-  };
-}
-
+/** Fila de pendiente para listas («Mi día», calendario, clientes, archivo). */
 export function TicketRow({
   ticket,
   onOpen,
   showAssignee = false,
   showStatus = true,
   delay = 0,
+  extra,
 }: {
   ticket: Ticket;
   onOpen: (id: number) => void;
   showAssignee?: boolean;
   showStatus?: boolean;
   delay?: number;
+  /** Acciones adicionales (p. ej. «Asignar» en la bandeja). */
+  extra?: ReactNode;
 }) {
-  const users = useUserMap();
+  const me = useCurrentUser();
   const categories = useCategoryMap();
   const complete = useCompleteTicket();
-  const postpone = usePostpone();
   const done = ticket.status === 'done';
+  const closed = done || !!ticket.archived_at;
   const category = ticket.category_id ? categories.get(ticket.category_id) : null;
-  const now = new Date();
+  const following = ticket.follower_ids.includes(me.id) && !ticket.assignee_ids.includes(me.id);
 
   return (
     <div
@@ -71,26 +44,30 @@ export function TicketRow({
       tabIndex={0}
       aria-label={`#${ticket.id} ${ticket.title}`}
       style={{ animationDelay: `${delay}ms` }}
-      className="group @container animate-rise cursor-pointer rounded-2xl border border-line bg-card px-3.5 py-3 shadow-card transition-all hover:border-line-2 hover:shadow-lift sm:px-4"
+      className="group @container animate-rise cursor-pointer rounded-2xl border border-line bg-card px-3 py-3 shadow-card transition-[box-shadow,border-color] hover:border-line-2 hover:shadow-lift sm:px-4"
     >
-      {/* En espacios angostos la fecha y acciones bajan debajo del título */}
-      <div className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2 @lg:grid-cols-[auto_1fr_auto]">
+      {/* En espacios angostos la fecha y las acciones bajan debajo del título */}
+      <div className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2 @xl:grid-cols-[auto_1fr_auto]">
         <button
           type="button"
-          aria-label={done ? 'Terminado' : 'Marcar como listo'}
+          aria-label={done ? 'Terminado' : `Marcar #${ticket.id} como listo`}
           title={done ? 'Terminado' : 'Marcar como listo'}
-          disabled={done}
+          disabled={closed}
           onClick={(e) => {
             e.stopPropagation();
             complete(ticket);
           }}
-          className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border-2 transition-all ${
-            done
-              ? 'border-moss bg-moss text-white'
-              : 'border-ink-3/50 text-transparent hover:border-moss hover:bg-moss-soft hover:text-moss'
-          }`}
+          className={`-m-1.5 flex size-11 shrink-0 items-center justify-center rounded-full disabled:cursor-default`}
         >
-          <Check className="size-4" strokeWidth={3} />
+          <span
+            className={`flex size-7 items-center justify-center rounded-full border-2 transition-all ${
+              done
+                ? 'border-moss-solid bg-moss-solid text-white'
+                : 'border-field text-transparent group-hover:border-ink-3 hover:border-moss-solid! hover:bg-moss-soft hover:text-moss!'
+            }`}
+          >
+            <Check className="size-4" strokeWidth={3} />
+          </span>
         </button>
 
         <div className="min-w-0 flex-1">
@@ -99,18 +76,32 @@ export function TicketRow({
             <CategoryTag category={category} />
             <PriorityFlag priority={ticket.priority} />
             {showStatus && ticket.status !== 'todo' && <StatusPill status={ticket.status} />}
+            {ticket.archived_at && <span className="rounded-full bg-paper-3 px-2 py-0.5 text-[12px] font-bold text-ink-2">Archivado</span>}
+            <RecurrenceIcon ticket={ticket} />
           </div>
-          <p className={`mt-0.5 text-[16px] leading-snug font-semibold ${done ? 'text-ink-3 line-through' : 'text-ink'}`}>{ticket.title}</p>
+          <p className={`mt-0.5 text-[16px] leading-snug font-semibold break-words ${done ? 'text-ink-3 line-through' : 'text-ink'}`}>
+            {ticket.title}
+          </p>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-2">
             {ticket.client_name && (
-              <span className="inline-flex items-center gap-1 font-medium">
-                <UserRound className="size-3.5 text-ink-3" />
-                {ticket.client_name}
+              <span className="inline-flex min-w-0 items-center gap-1 font-medium">
+                <UserRound className="size-3.5 shrink-0 text-ink-3" />
+                <span className="truncate">{ticket.client_name}</span>
+              </span>
+            )}
+            {following && (
+              <span className="inline-flex items-center gap-1 font-semibold text-ink-3" title="Estás en copia: lo ves y te llegan avisos">
+                <Eye className="size-3.5" /> En copia
               </span>
             )}
             {ticket.comment_count > 0 && (
-              <span className="inline-flex items-center gap-1 text-ink-3">
+              <span className="inline-flex items-center gap-1 text-ink-3" title="Notas">
                 <MessageSquareText className="size-3.5" /> {ticket.comment_count}
+              </span>
+            )}
+            {ticket.attachment_count > 0 && (
+              <span className="inline-flex items-center gap-1 text-ink-3" title="Archivos">
+                <Paperclip className="size-3.5" /> {ticket.attachment_count}
               </span>
             )}
             {ticket.checklist_total > 0 && <ProgressBar done={ticket.checklist_done} total={ticket.checklist_total} className="w-28" />}
@@ -122,48 +113,18 @@ export function TicketRow({
           )}
         </div>
 
-        <div className="col-start-2 flex items-center gap-2 @lg:col-start-3 @lg:row-start-1 @lg:flex-col @lg:items-end @2xl:flex-row @2xl:items-center">
+        <div
+          className="col-span-2 flex flex-wrap items-center gap-1.5 pl-1 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1 @xl:justify-end @xl:pl-0"
+          onClick={(e) => e.stopPropagation()}
+        >
           <DueChip date={ticket.due_date} done={done} size="md" />
-          {showAssignee && <Avatar user={ticket.assignee_id ? users.get(ticket.assignee_id) : null} size="sm" />}
-          {!done && (
-            <Menu
-              width="w-56"
-              trigger={({ toggle }) => (
-                <button
-                  type="button"
-                  onClick={toggle}
-                  className="btn-ghost btn-sm text-ink-3 @lg:opacity-60 @lg:group-hover:opacity-100"
-                  title="Posponer"
-                >
-                  <Clock className="size-4" />
-                  <span className="hidden @2xl:inline">Posponer</span>
-                </button>
-              )}
-            >
-              {(close) => (
-                <>
-                  <p className="px-3 pt-1.5 pb-1 eyebrow">
-                    {ticket.status === 'waiting' && ticket.follow_up_date ? 'Revisar de nuevo…' : 'Mover fecha a…'}
-                  </p>
-                  {[
-                    { label: 'Mañana', date: toDateStr(addDays(now, 1)) },
-                    { label: 'Pasado mañana', date: toDateStr(addDays(now, 2)) },
-                    { label: 'El próximo lunes', date: toDateStr(nextMonday(now)) },
-                    { label: 'En una semana', date: toDateStr(addDays(now, 7)) },
-                  ].map((o) => (
-                    <MenuItem
-                      key={o.label}
-                      onClick={() => {
-                        close();
-                        postpone(ticket, o.date, o.label);
-                      }}
-                    >
-                      {o.label}
-                    </MenuItem>
-                  ))}
-                </>
-              )}
-            </Menu>
+          {showAssignee && <AvatarStack ids={ticket.assignee_ids} size="sm" />}
+          {extra}
+          {!closed && (
+            <span className="flex items-center can-hover:opacity-70 can-hover:group-hover:opacity-100 can-hover:focus-within:opacity-100">
+              <PostponeMenuButton ticket={ticket} labelClass="@xl:hidden" />
+              <StatusMenuButton ticket={ticket} labelClass="@xl:hidden" />
+            </span>
           )}
         </div>
       </div>

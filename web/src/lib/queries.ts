@@ -7,6 +7,7 @@ import type {
   Category,
   ChecklistItem,
   Client,
+  MyStep,
   Notification,
   Settings,
   Stats,
@@ -28,6 +29,7 @@ export const qk = {
   notifications: ['notifications'] as const,
   activity: ['activity'] as const,
   settings: ['settings'] as const,
+  mySteps: ['my-steps'] as const,
 };
 
 export function useMe() {
@@ -71,6 +73,10 @@ export function useTicket(id: number | null) {
     queryFn: () => api.get<TicketDetail>(`/tickets/${id}`),
     enabled: !!id,
   });
+}
+
+export function useMySteps() {
+  return useQuery({ queryKey: qk.mySteps, queryFn: () => api.get<MyStep[]>('/tickets/my-steps') });
 }
 
 export function useClients() {
@@ -117,7 +123,8 @@ export type TicketPatch = Partial<
     | 'description'
     | 'status'
     | 'priority'
-    | 'assignee_id'
+    | 'assignee_ids'
+    | 'follower_ids'
     | 'category_id'
     | 'client_id'
     | 'due_date'
@@ -132,7 +139,8 @@ export function useUpdateTicket() {
   const qc = useQueryClient();
   const invalidate = useInvalidateAll();
   return useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: TicketPatch }) => api.patch<Ticket>(`/tickets/${id}`, patch),
+    // Si la persona se quitó a sí misma y ya no puede verlo, el servidor responde { hidden: true }.
+    mutationFn: ({ id, patch }: { id: number; patch: TicketPatch }) => api.patch<Ticket & { hidden?: boolean }>(`/tickets/${id}`, patch),
     onMutate: async ({ id, patch }) => {
       await qc.cancelQueries({ queryKey: qk.tickets });
       const prev = qc.getQueryData<Ticket[]>(qk.tickets);
@@ -158,6 +166,13 @@ export function useUpdateTicket() {
     onError: (err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.tickets, ctx.prev);
       toast.error(err.message);
+    },
+    onSuccess: (data, { id }) => {
+      if (data.hidden) {
+        qc.setQueryData<Ticket[]>(qk.tickets, (old) => old?.filter((t) => t.id !== id));
+        qc.removeQueries({ queryKey: qk.ticket(id) });
+        toast('Ya no estás en ese pendiente', { description: 'Quedó con las demás personas o en la bandeja «Por asignar».' });
+      }
     },
     onSettled: () => invalidate(),
   });
@@ -192,12 +207,13 @@ export function useToggleChecklist() {
   const qc = useQueryClient();
   const invalidate = useInvalidateAll();
   return useMutation({
-    mutationFn: ({ item, done }: { item: ChecklistItem; done: boolean }) =>
+    mutationFn: ({ item, done }: { item: Pick<ChecklistItem, 'id' | 'ticket_id'>; done: boolean }) =>
       api.patch<ChecklistItem>(`/checklist/${item.id}`, { done }),
     onMutate: ({ item, done }) => {
       qc.setQueryData<TicketDetail>(qk.ticket(item.ticket_id), (old) =>
         old ? { ...old, checklist: old.checklist.map((c) => (c.id === item.id ? { ...c, done: done ? 1 : 0 } : c)) } : old,
       );
+      if (done) qc.setQueryData<MyStep[]>(qk.mySteps, (old) => old?.filter((s) => s.id !== item.id));
     },
     onError: (err) => toast.error(err.message),
     onSettled: () => invalidate(),

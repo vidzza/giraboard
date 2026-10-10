@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, Flame, Plus, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eye, Flame, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { RECURRENCES, RECURRENCE_LABEL, type Recurrence, type Status } from '../../../shared/types.ts';
-import { useCreateTicket, useCurrentUser, type NewTicket } from '../lib/queries.ts';
+import { useCreateTicket, useCurrentUser, useSettings, type NewTicket } from '../lib/queries.ts';
+import { canAssignOthers } from '../lib/permissions.ts';
 import { Modal } from './Modal.tsx';
-import { CategoryPicker, ClientPicker, DueDatePicker, PersonPicker, type ClientValue } from './Pickers.tsx';
+import { CategoryPicker, ClientPicker, DueDatePicker, PeoplePicker, type ClientValue } from './Pickers.tsx';
 import { AutoTextarea } from './Editable.tsx';
 
 export type NewTicketPrefill = Partial<NewTicket> & { client_name?: string };
@@ -21,9 +22,13 @@ export function NewTicketDialog({
   onCreated: (id: number) => void;
 }) {
   const me = useCurrentUser();
+  const { data: settings } = useSettings();
   const create = useCreateTicket();
+  const onlySelf = !canAssignOthers(me, settings);
   const [title, setTitle] = useState('');
-  const [assignee, setAssignee] = useState<number | null>(me.id);
+  const [assignees, setAssignees] = useState<number[]>([me.id]);
+  const [followers, setFollowers] = useState<number[]>([]);
+  const [showFollowers, setShowFollowers] = useState(false);
   const [due, setDue] = useState<string | null>(null);
   const [category, setCategory] = useState<number | null>(null);
   const [client, setClient] = useState<ClientValue>({ id: null, name: null });
@@ -38,7 +43,9 @@ export function NewTicketDialog({
   useEffect(() => {
     if (!open) return;
     setTitle(prefill.title ?? '');
-    setAssignee(prefill.assignee_id !== undefined ? prefill.assignee_id : me.id);
+    setAssignees(prefill.assignee_ids ?? [me.id]);
+    setFollowers([]);
+    setShowFollowers(false);
     setDue(prefill.due_date ?? null);
     setCategory(prefill.category_id ?? null);
     setClient(prefill.client_id ? { id: prefill.client_id, name: prefill.client_name ?? 'Cliente' } : { id: null, name: null });
@@ -59,7 +66,8 @@ export function NewTicketDialog({
     const pendingStep = step.trim();
     const data: NewTicket = {
       title: title.trim(),
-      assignee_id: assignee,
+      assignee_ids: assignees,
+      follower_ids: followers.filter((id) => !assignees.includes(id)),
       due_date: due,
       category_id: category,
       priority: urgent ? 'urgent' : 'normal',
@@ -103,13 +111,14 @@ export function NewTicketDialog({
       width="max-w-2xl"
       footer={
         <>
-          <button className="btn-ghost mr-auto" onClick={requestClose}>
+          <button className="btn-ghost mr-auto max-sm:hidden" onClick={requestClose}>
             Cancelar
           </button>
-          <button className="btn-secondary" onClick={() => submit(true)} disabled={create.isPending}>
-            Crear y agregar otro
+          <button className="btn-secondary max-sm:flex-1 max-sm:px-2" onClick={() => submit(true)} disabled={create.isPending}>
+            <span className="sm:hidden">Crear y otro</span>
+            <span className="max-sm:hidden">Crear y agregar otro</span>
           </button>
-          <button className="btn-primary" onClick={() => submit(false)} disabled={create.isPending}>
+          <button className="btn-primary max-sm:flex-1" onClick={() => submit(false)} disabled={create.isPending}>
             <Plus className="size-4" /> Crear pendiente
           </button>
         </>
@@ -145,8 +154,20 @@ export function NewTicketDialog({
         </div>
 
         <div>
-          <span className="label">¿Quién lo va a hacer?</span>
-          <PersonPicker value={assignee} onChange={setAssignee} />
+          <span className="label">¿Quién se encarga?</span>
+          <PeoplePicker value={assignees} onChange={setAssignees} meId={me.id} onlySelf={onlySelf} />
+          {showFollowers ? (
+            <div className="mt-4">
+              <span className="label">En copia (lo ven y reciben avisos)</span>
+              <PeoplePicker mode="followers" value={followers} onChange={setFollowers} exclude={assignees} meId={me.id} onlySelf={onlySelf} />
+            </div>
+          ) : (
+            !onlySelf && (
+              <button type="button" className="btn-ghost btn-sm mt-1 -ml-2" onClick={() => setShowFollowers(true)}>
+                <Eye className="size-4" /> Poner a alguien en copia
+              </button>
+            )
+          )}
         </div>
 
         <div>
@@ -167,7 +188,8 @@ export function NewTicketDialog({
           <button
             type="button"
             onClick={() => setUrgent((u) => !u)}
-            className={`chip min-h-11 justify-center px-4 ${urgent ? 'border-clay bg-clay text-white' : 'border-line-2 bg-card text-clay hover:bg-clay-soft'}`}
+            aria-pressed={urgent}
+            className={`chip min-h-12 justify-center px-4 ${urgent ? 'border-clay-solid bg-clay-solid text-white' : 'border-line-2 bg-card text-clay hover:bg-clay-soft'}`}
           >
             <Flame className="size-4" /> {urgent ? 'Es urgente' : '¿Es urgente?'}
           </button>

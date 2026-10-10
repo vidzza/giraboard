@@ -37,18 +37,43 @@ export const RECURRENCE_LABEL: Record<Recurrence, string> = {
   yearly: 'Cada año',
 };
 
-export type Role = 'admin' | 'member';
+export const ROLES = ['admin', 'manager', 'member'] as const;
+export type Role = (typeof ROLES)[number];
+
+export const ROLE_LABEL: Record<Role, string> = {
+  admin: 'Admin',
+  manager: 'Coordinación',
+  member: 'Equipo',
+};
+
+export const ROLE_HINT: Record<Role, string> = {
+  admin: 'Ve y maneja todo: cuentas, ajustes, borrar y descargar datos.',
+  manager: 'Ve todos los pendientes, los reparte y ve el Resumen. No maneja cuentas ni borra.',
+  member: 'Ve solo lo suyo: lo que tiene asignado, lo que pidió y donde está en copia.',
+};
+
+/** Admin y Coordinación ven todos los pendientes y reparten el trabajo. */
+export function seesEverything(role: Role) {
+  return role === 'admin' || role === 'manager';
+}
 
 /** Días sin movimiento para considerar un pendiente "estancado". */
 export const STALE_DAYS = 7;
 
+// Colores de avatares y tipos: todos con contraste ≥ 4.5:1 con texto blanco (WCAG AA).
 export const USER_COLORS = [
-  '#1E5B4F', '#B5523B', '#3A6EA5', '#8A5A9E', '#C28A1E', '#2F7D5B', '#A23E6A', '#4E5D6C',
+  '#1E5B4F', '#B5523B', '#3A6EA5', '#8A5A9E', '#8A5D0B', '#2F7D5B', '#A23E6A', '#4E5D6C', '#0E7490', '#5C5248',
 ];
 
 export const CATEGORY_COLORS = [
-  '#1E5B4F', '#3A6EA5', '#B5523B', '#C28A1E', '#8A5A9E', '#2F7D5B', '#A23E6A', '#4E5D6C', '#0E7490', '#9A6B3F',
+  '#1E5B4F', '#3A6EA5', '#B5523B', '#8A5D0B', '#8A5A9E', '#2F7D5B', '#A23E6A', '#4E5D6C', '#0E7490', '#7A5530',
 ];
+
+/** Colores viejos que no tenían buen contraste con texto blanco → su reemplazo. */
+export const LEGACY_COLOR_FIX: Record<string, string> = {
+  '#C28A1E': '#8A5D0B',
+  '#9A6B3F': '#7A5530',
+};
 
 export interface User {
   id: number;
@@ -89,7 +114,10 @@ export interface Ticket {
   description: string;
   status: Status;
   priority: Priority;
-  assignee_id: number | null;
+  /** Responsables: a cada uno le aparece en «Mi día». Vacío = por asignar. */
+  assignee_ids: number[];
+  /** En copia: lo ven y reciben avisos, pero no es su responsabilidad. */
+  follower_ids: number[];
   creator_id: number;
   category_id: number | null;
   client_id: number | null;
@@ -119,8 +147,20 @@ export interface ChecklistItem {
   text: string;
   done: number;
   position: number;
+  /** Persona encargada de este paso (opcional). */
+  assignee_id: number | null;
   done_by: number | null;
   done_at: string | null;
+}
+
+/** Un paso que le encargaron a la persona actual, con datos de su pendiente. */
+export interface MyStep {
+  id: number;
+  ticket_id: number;
+  text: string;
+  ticket_title: string;
+  due_date: string | null;
+  ticket_status: Status;
 }
 
 export interface Comment {
@@ -145,6 +185,8 @@ export type ActivityType =
   | 'created'
   | 'status'
   | 'assignee'
+  | 'assignees'
+  | 'followers'
   | 'due'
   | 'priority'
   | 'title'
@@ -155,8 +197,11 @@ export type ActivityType =
   | 'checklist_add'
   | 'checklist_done'
   | 'checklist_undone'
+  | 'checklist_removed'
+  | 'checklist_assigned'
   | 'comment'
   | 'attachment'
+  | 'attachment_deleted'
   | 'archived'
   | 'unarchived'
   | 'recurring_next'
@@ -206,6 +251,7 @@ export interface Stats {
   done_week: number;
   created_week: number;
   stale: number;
+  unassigned: number;
   per_user: { user_id: number; open: number; overdue: number; waiting: number; done_week: number }[];
   per_category: { category_id: number | null; open: number }[];
   weekly: { week_start: string; done: number; created: number }[];
@@ -217,6 +263,8 @@ export interface Settings {
   business_name: string;
   /** Zona horaria IANA del negocio, ej. "America/Mexico_City". */
   timezone: string;
+  /** Si el Equipo puede asignar pendientes a otras personas (si no, solo a sí mismo o a la bandeja). */
+  members_can_assign: boolean;
 }
 
 /** Tipos de pendiente iniciales que se pueden elegir al configurar (luego se editan libremente). */

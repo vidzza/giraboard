@@ -27,6 +27,7 @@ export function EditableText({
   allowEmpty = true,
   autoFocus,
   maxLength,
+  label,
 }: {
   value: string;
   onSave: (v: string) => void;
@@ -37,6 +38,8 @@ export function EditableText({
   allowEmpty?: boolean;
   autoFocus?: boolean;
   maxLength?: number;
+  /** Nombre del campo para lectores de pantalla. */
+  label?: string;
 }) {
   const [draft, setDraft] = useState(value);
   const focused = useRef(false);
@@ -61,6 +64,7 @@ export function EditableText({
       placeholder={placeholder}
       autoFocus={autoFocus}
       maxLength={maxLength}
+      aria-label={label}
       onFocus={() => (focused.current = true)}
       onChange={(e) => setDraft(multiline ? e.target.value : e.target.value.replace(/\n/g, ' '))}
       onBlur={commit}
